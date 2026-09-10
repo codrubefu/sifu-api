@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ro">
+
+<head>
+    <meta charset="utf-8">
+    <title>Chitanta RO-TRADITIONAL</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 0
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: #eee;
+            color: #111;
+            font-family: 'Times New Roman', serif
+        }
+
+        .page {
+            width: 210mm;
+            height: 297mm;
+            background: #fff;
+            margin: auto;
+            padding: 6.5mm 9mm 5mm
+        }
+
+        .receipt {
+            height: 82mm;
+            border: 1px solid #111;
+            position: relative;
+            padding: 3mm 2mm 4mm;
+            margin-bottom: 10mm
+        }
+
+        .receipt:not(:last-child):after {
+            content: '';
+            position: absolute;
+            left: -1mm;
+            right: -1mm;
+            bottom: -7mm;
+            border-bottom: 1px dashed #bbb
+        }
+
+        .copyname {
+            position: absolute;
+            right: 4mm;
+            top: 2mm;
+            font-size: 8pt;
+            font-style: italic
+        }
+
+        .header {
+            display: grid;
+            grid-template-columns: 39% 33% 28%;
+            align-items: start
+        }
+
+        .company {
+            text-align: center;
+            font-weight: bold;
+            font-size: 9.5pt
+        }
+
+        .company .small {
+            font-weight: normal;
+            font-size: 7pt;
+            line-height: 1.7
+        }
+
+        .title {
+            text-align: center;
+            font-size: 18pt;
+            font-weight: bold;
+            margin-top: 8mm
+        }
+
+        .docmeta {
+            font-weight: bold;
+            font-size: 9pt;
+            line-height: 1.6;
+            margin-top: 2mm
+        }
+
+        .docmeta span {
+            display: inline-block;
+            min-width: 11mm
+        }
+
+        .bank {
+            font-size: 7.3pt;
+            line-height: 1.5;
+            margin-top: 2mm
+        }
+
+        .bank b {
+            display: inline-block;
+            min-width: 12mm
+        }
+
+        .work {
+            font-weight: bold;
+            margin-top: 1mm
+        }
+
+        .form {
+            font-size: 9pt;
+            margin-top: 4mm;
+            line-height: 1.55
+        }
+
+        .line {
+            display: grid;
+            grid-template-columns: 28mm 1fr;
+            align-items: end
+        }
+
+        .dots {
+            border-bottom: 1px dashed #555;
+            min-height: 4.5mm;
+            position: relative
+        }
+
+        .value {
+            position: absolute;
+            left: 2mm;
+            bottom: -.2mm;
+            background: #fff;
+            padding: 0 1mm
+        }
+
+        .sumgrid {
+            display: grid;
+            grid-template-columns: 15mm 48mm 10mm 1fr
+        }
+
+        .cash {
+            display: grid;
+            grid-template-columns: 15mm 50mm 1fr;
+            margin-top: 1mm
+        }
+
+        .footerlogo {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -5.5mm;
+            text-align: center;
+            font-size: 7pt
+        }
+
+        .footerlogo img {
+            width: 13mm;
+            vertical-align: middle;
+            margin-right: 2mm
+        }
+
+        .code {
+            position: absolute;
+            right: 2mm;
+            bottom: -4.4mm;
+            font-size: 7pt
+        }
+
+        .archivecode {
+            position: absolute;
+            left: 1mm;
+            bottom: -4.5mm;
+            font-size: 7pt;
+            font-style: italic
+        }
+
+        @media print {
+            body {
+                background: #fff
+            }
+
+            .page {
+                margin: 0
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page">
+        <section class="receipt">
+            <div class="copyname">Exemplar Client</div>
+            <div class="header">
+                <div>
+                    <div class="company">ACORD SERVICE CO SRL<div class="small">Str. Buzoieni nr.3, Bloc
+                            M73,apt.40&nbsp; Bucuresti-Sector5<br>Email: office@acordnet.ro&nbsp;&nbsp;
+                            www.acordnet.ro<br>Tel. +40.72.253 5723&nbsp;&nbsp; Fax +40.21.420 7646</div>
+                    </div>
+                    <div class="bank">C.U.I. RO14348316&nbsp;&nbsp; Nr.Reg.Com. J40/10249/2001<br><b>Capital social:</b>
+                        200&nbsp; RON<br><b>Cont:</b> RO83BACX0000001169978000<br><b>Banca:</b> Unicredit Bank<div
+                            class="work">Punct de lucru:</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="title">CHITANTA</div>
+                    <div class="docmeta"><span>Seria:</span> AC SER<br><span>Nr.:</span>
+                        CH202600035<br><span>Data:</span> 12-Aug-2026</div>
+                </div>
+                <div></div>
+            </div>
+            <div class="form">
+                <div class="line">
+                    <div>Am primit de la</div>
+                    <div class="dots"><span class="value">RO-TRADITIONAL SRL&nbsp;&nbsp; C.U.I. RO16864160&nbsp;&nbsp;
+                            Nr.Reg.Com. J51/525/2004</span></div>
+                </div>
+                <div class="line">
+                    <div>Adresa</div>
+                    <div class="dots"><span class="value">Sat Frumusani&nbsp; Frumusani 19</span></div>
+                </div>
+                <div class="sumgrid">
+                    <div>Suma de</div>
+                    <div class="dots"><span class="value" style="left:25mm">302.50</span></div>
+                    <div>adica</div>
+                    <div class="dots"><span class="value">treisutedoileisicincizecibani</span></div>
+                </div>
+                <div class="line">
+                    <div>&nbsp;</div>
+                    <div class="dots"></div>
+                </div>
+                <div class="line">
+                    <div>Reprezentand contravaloare factura nr.</div>
+                    <div class="dots"><span class="value">FA120260100169 din 01-Aug-2026</span></div>
+                </div>
+                <div class="cash">
+                    <div>Casier,</div>
+                    <div>Marius Rus</div>
+                    <div class="dots"></div>
+                </div>
+                <div class="line">
+                    <div>&nbsp;</div>
+                    <div class="dots"></div>
+                </div>
+            </div>
+            <div class="footerlogo"><img
+                    src="data:image/png;base64,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">Software
+                developed by Acord Proexim Co. SRL&nbsp;&nbsp; www.acordnet.ro</div>
+            <div class="code">14-4-1</div>
+        </section>
+    </div>
+</body>
+
+</html>
