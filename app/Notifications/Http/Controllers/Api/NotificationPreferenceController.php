@@ -20,7 +20,7 @@ class NotificationPreferenceController extends Controller
     public function registerDevice(Request $request): JsonResponse
     {
         $data = $request->validate(['token' => ['required', 'string', 'max:2048'], 'device_id' => ['nullable', 'string', 'max:255']]);
-        $device = PushDevice::query()->updateOrCreate(['token' => $data['token']], ['user_id' => $request->user()->id, 'device_id' => $data['device_id'] ?? null, 'last_used_at' => now()]);
+        $device = PushDevice::query()->updateOrCreate(['token_hash' => hash('sha256', $data['token'])], ['token' => $data['token'], 'user_id' => $request->user()->id, 'device_id' => $data['device_id'] ?? null, 'last_used_at' => now()]);
         return response()->json(['data' => $device], 201);
     }
     public function removeDevice(Request $request, PushDevice $device): JsonResponse

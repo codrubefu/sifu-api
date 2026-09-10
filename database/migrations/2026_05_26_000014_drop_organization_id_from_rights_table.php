@@ -9,8 +9,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('rights', function (Blueprint $table): void {
+            $table->dropForeign(['organization_id']);
             $table->dropIndex(['organization_id']);
-            $table->dropConstrainedForeignId('organization_id');
+            $table->dropColumn('organization_id');
         });
     }
 
