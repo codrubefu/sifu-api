@@ -5,10 +5,13 @@ namespace App\Events\Http\Controllers\Api;
 use App\Events\Http\Resources\EventOccurrenceResource;
 use App\Events\Models\Event;
 use App\Events\Models\EventOccurrence;
+use App\Notifications\Events\NotificationRequested;
 use App\Users\Http\Controllers\Controller;
+use App\Users\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use OpenApi\Attributes as OA;
 
 class EventOccurrenceController extends Controller
@@ -114,6 +117,57 @@ class EventOccurrenceController extends Controller
             'success' => true,
             'message' => 'Event occurrence retrieved successfully.',
             'data' => new EventOccurrenceResource($occurrence->load(['event.category', 'event.requiredService'])->loadCount('participants')),
+        ]);
+    }
+
+    #[OA\Patch(
+        path: '/event-occurrences/{occurrence}/cancel',
+        summary: 'Cancel event occurrence',
+        description: 'Cancels a single event occurrence and notifies its registered/attended participants.',
+        security: [['bearerAuth' => []]],
+        tags: ['Event Occurrences'],
+        parameters: [new OA\PathParameter(name: 'occurrence', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'Occurrence cancelled.', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/EventOccurrence')])),
+            new OA\Response(response: 400, description: 'Occurrence already cancelled or completed.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 401, description: 'Unauthenticated.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Forbidden.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 404, description: 'Not found.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
+    public function cancel(Request $request, EventOccurrence $occurrence): JsonResponse
+    {
+        abort_unless((int) $occurrence->organization_id === (int) $request->user()->organization_id, 404);
+
+        if (in_array($occurrence->status, ['cancelled', 'completed'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Event occurrence is already cancelled or completed.',
+            ], 400);
+        }
+
+        DB::transaction(function () use ($occurrence): void {
+            $occurrence->update(['status' => 'cancelled']);
+
+            $occurrenceId = $occurrence->id;
+            $eventTitle = $occurrence->event?->title ?? (string) $occurrence->event_id;
+            $version = $occurrence->updated_at->getTimestamp();
+            $type = NotificationRequested::OCCURRENCE_CANCELLED;
+
+            DB::afterCommit(function () use ($occurrenceId, $eventTitle, $version, $type): void {
+                EventOccurrence::withoutGlobalScopes()->find($occurrenceId)
+                    ?->activeParticipants()
+                    ->get()
+                    ->each(fn (User $user) => NotificationRequested::dispatch(
+                        $user, $type, "{$type}:{$occurrenceId}:{$version}", ['event' => $eventTitle]
+                    ));
+            });
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Event occurrence cancelled successfully.',
+            'data' => new EventOccurrenceResource($occurrence->refresh()->load(['event.category', 'event.requiredService'])->loadCount('participants')),
         ]);
     }
 }

@@ -7,6 +7,7 @@ use App\Users\Models\Organization;
 use App\Users\Models\Right;
 use App\Users\Models\User;
 use Database\Seeders\CustomFieldRightsSeeder;
+use Database\Seeders\LocationGroupRightsSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -150,6 +151,8 @@ class CreateOrganizationAdmin extends Command
             ['name' => 'profile.view', 'label' => 'View own profile', 'description' => 'Access the authenticated user profile.'],
             ['name' => 'users.view', 'label' => 'View users', 'description' => 'Read user records.'],
             ['name' => 'users.manage', 'label' => 'Manage users', 'description' => 'Create, update, and deactivate users.'],
+            ['name' => 'grades.view', 'label' => 'View grades', 'description' => 'Read organization grades and user grade history.'],
+            ['name' => 'grades.manage', 'label' => 'Manage grades', 'description' => 'Create grades and manage user grade history.'],
             ['name' => 'user-documents.view', 'label' => 'View user documents', 'description' => 'Read and securely download member documents.'],
             ['name' => 'user-documents.upload', 'label' => 'Upload user documents', 'description' => 'Upload and replace member documents.'],
             ['name' => 'user-documents.delete', 'label' => 'Delete user documents', 'description' => 'Delete member documents from private storage.'],
@@ -165,6 +168,7 @@ class CreateOrganizationAdmin extends Command
             ['name' => 'services.delete', 'label' => 'Delete services', 'description' => 'Delete services.'],
             ['name' => 'services.restore', 'label' => 'Restore services', 'description' => 'Restore deleted services.'],
             ['name' => 'services.manage', 'label' => 'Manage services', 'description' => 'Manage all service actions.'],
+            ['name' => 'sms.view', 'label' => 'View SMS messages', 'description' => 'Read sent, pending, and failed SMS messages.'],
             ['name' => 'articles.view', 'label' => 'View articles', 'description' => 'Read articles.'],
             ['name' => 'articles.create', 'label' => 'Create articles', 'description' => 'Create articles.'],
             ['name' => 'articles.update', 'label' => 'Update articles', 'description' => 'Update articles.'],
@@ -174,6 +178,8 @@ class CreateOrganizationAdmin extends Command
             ['name' => 'events.manage', 'label' => 'Manage events', 'description' => 'Create, update, and delete events.'],
             ['name' => 'event_participants.view', 'label' => 'View event participants', 'description' => 'Read event occurrence participants.'],
             ['name' => 'event_participants.manage', 'label' => 'Manage event participants', 'description' => 'Add and remove event occurrence participants.'],
+            ['name' => 'checkins.manage', 'label' => 'Manage check-ins', 'description' => 'Search members and confirm reception check-ins.'],
+            ['name' => 'checkins.override', 'label' => 'Override check-ins', 'description' => 'Allow explicit reception check-in overrides for invalid access.'],
             ['name' => 'payments.view', 'label' => 'View payments', 'description' => 'Read payment records.'],
             ['name' => 'payments.create', 'label' => 'Create payments', 'description' => 'Register payments.'],
             ['name' => 'payments.update', 'label' => 'Update payments', 'description' => 'Update payment payable model links.'],
@@ -183,6 +189,12 @@ class CreateOrganizationAdmin extends Command
             ['name' => 'reports.export', 'label' => 'Export financial reports', 'description' => 'Generate and download financial exports.'],
             ['name' => 'segments.view', 'label' => 'View segments', 'description' => 'Read and evaluate saved member segments.'],
             ['name' => 'segments.manage', 'label' => 'Manage segments', 'description' => 'Create, update, and delete saved member segments.'],
-        ])->merge(CustomFieldRightsSeeder::rights());
+            ['name' => 'gdpr.export', 'label' => 'Export personal data', 'description' => 'Access and export personal data for tenant users.'],
+            ['name' => 'gdpr.process', 'label' => 'Process GDPR requests', 'description' => 'Rectify data and process erasure requests.'],
+            ['name' => 'smtp_settings.view', 'label' => 'View SMTP settings', 'description' => 'Read the organization outgoing mail (SMTP) settings.'],
+            ['name' => 'smtp_settings.manage', 'label' => 'Manage SMTP settings', 'description' => 'Create, update, and delete the organization outgoing mail (SMTP) settings.'],
+        ])
+            ->merge(CustomFieldRightsSeeder::rights())
+            ->merge(LocationGroupRightsSeeder::rights());
     }
 }

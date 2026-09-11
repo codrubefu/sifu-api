@@ -124,6 +124,8 @@ Behavior:
 
 - New records often inherit the authenticated user's organization automatically.
 - Queries are scoped to the authenticated organization where models use the organization concern.
+- `BelongsToAuthenticatedOrganization`'s global scope treats a row with `organization_id IS NULL` as a shared/global record, visible to (and selectable by) every organization — not just to the organization that happens to own it, since there is none. This applies to every model listed in the trait's usages (`Service`, `LocationGroup`, `Location`, `User`, `Grade`, `UserGrade`, `UserDocument`, `Group`, `CustomFieldValue`, `EventCategory`, `SmtpSetting`, `Article`, `CustomField`, `Event`, `EventOccurrence`, `Campaign`, `Segment`).
+- Because of that, Form Request `exists` validation for a foreign key into one of those models must accept both the authenticated organization's own rows and shared/global (`NULL`-organization) rows — otherwise a value that was legitimately offered by a list endpoint (e.g. a shared `Location`/`Group`) would be rejected as invalid when submitted back. `App\Users\Support\OrganizationScopedExistsRule::make($table, $column, $organizationId)` is the shared helper for this (used by Events, Articles, Campaigns, and Users Form Requests); it never allows another organization's non-null rows, only adds the `NULL`-organization case.
 - Some internal jobs use `withoutGlobalScopes()` when they intentionally need cross-scope lookup.
 
 ## Functional Modules
@@ -262,6 +264,7 @@ Main services:
 
 - `app/Events/Services/EventOccurrenceGeneratorService.php`
 - `app/Events/Services/EventEligibilityService.php`
+- `app/Events/Services/EventParticipantService.php`
 
 Routes:
 
@@ -278,10 +281,24 @@ Routes:
 - `DELETE /api/events/{event}`
 - `GET /api/events/{event}/occurrences`
 - `GET /api/event-occurrences/{occurrence}`
+- `PATCH /api/event-occurrences/{occurrence}/cancel`
 - `GET /api/event-occurrences/{occurrence}/eligible-participants`
 - `GET /api/event-occurrences/{occurrence}/participants`
 
 When an event has a required service with a finite `max_accesses` limit, adding a participant consumes exactly one access from that user's active assignment. Single and bulk participant additions consume inside the same database transaction as the participant pivot insert, so a failed addition rolls back the consumption. Duplicate registrations remain rejected before consumption. The current participant schema does not restore an access when a participant is removed; restoration would require a usage ledger linking the participant to the consumed service assignment.
+
+Event reporting dimensions (`location_id`, `instructor_id`, `group_id`):
+
+- `Event` (`app/Events/Models/Event.php`) has three optional foreign keys added for reporting/filtering purposes: `location_id` (→ `App\Users\Models\Location`, nullable FK on `locations`), `instructor_id` (→ `App\Users\Models\User`, nullable FK on `users`), and `group_id` (→ `App\Users\Models\Group`, nullable FK on `groups`). All three `nullOnDelete()`. The model exposes them as Eloquent relations: `location()`, `instructor()`, `group()`.
+- These are distinct from the pre-existing free-text `location` string column on `events`, which remains unchanged and is still used as a display fallback for ad-hoc events that don't have a structured `Location` record. `location_id` is the structured/primary source when set; the two are never auto-synced.
+- `EventResource` (`app/Events/Http/Resources/EventResource.php`) exposes, alongside the existing raw `location_id`/`instructor_id`/`group_id` IDs:
+  - `location_text`: the free-text fallback string (formerly serialized under the `location` key — renamed to avoid colliding with the new resolved-object `location` key below).
+  - `location`: `{"id": ..., "name": ...}` resolved from `location_id`, or `null` when `location_id` is not set.
+  - `instructor`: `{"id": ..., "name": ...}` — a minimal projection of the instructor `User` (full name only), not a full `UserResource`, to avoid leaking sensitive user fields. `null` when `instructor_id` is not set.
+  - `group`: `{"id": ..., "name": ...}` resolved from `group_id`, or `null` when `group_id` is not set.
+  - All three resolved fields use `whenLoaded()`; if a caller forgets to eager-load `location`/`instructor`/`group`, the keys are simply omitted from the response instead of triggering N+1 queries.
+- `EventController@index/store/show/update` eager-load `location`, `instructor`, and `group` alongside `category` and `requiredService`.
+- `StoreEventRequest`/`UpdateEventRequest` validate `location_id`, `instructor_id`, and `group_id` as nullable and, when present, must reference a `locations`/`users`/`groups` row belonging to the authenticated user's organization or a shared/global row (`organization_id IS NULL`) — same rule already used for `category_id`. A value from another, non-null organization is rejected with `422`. This is built with `App\Users\Support\OrganizationScopedExistsRule::make()`, a small shared helper used by every Form Request that validates a foreign key against a model using `BelongsToAuthenticatedOrganization`, so the `exists` check always matches that trait's own visibility scope (own-organization rows plus shared/global `NULL`-organization rows) instead of rejecting legitimately selectable shared records.
 
 ### Grades
 
@@ -327,14 +344,24 @@ Functional behavior:
 - Quick add lists eligible users for a selected occurrence through `GET /api/event-occurrences/{occurrence}/eligible-participants`; the list excludes existing participants and applies active-service requirements before returning results. Multiple selected users can be attached atomically through `POST /api/event-occurrences/{occurrence}/participants/bulk`.
 - Participant status can be managed.
 - When schedule changes or an inactive event resumes, notifications are dispatched to affected participants.
+- `PATCH /api/event-occurrences/{occurrence}/cancel` cancels a single occurrence (requires `events.manage`). It rejects with `400` when the occurrence is already `cancelled` or `completed`. On success it sets `status` to `cancelled` and, after the transaction commits, dispatches `NotificationRequested` with type `occurrence.cancelled` to every participant whose pivot status on that occurrence is `registered` or `attended`, using an idempotent `event_key` of `occurrence.cancelled:{occurrence_id}:{updated_at_timestamp}`. The endpoint explicitly checks that the occurrence belongs to the caller's organization (`404` otherwise) rather than relying solely on the model's global scope, since route-model binding resolves before the bearer-token auth middleware runs and can't rely on `Auth::user()` for scoping.
+- `GET/PATCH/DELETE /api/events/{event}` (show, update, destroy) likewise perform an explicit organization check on the bound `Event` before acting, for the same route-model-binding-before-auth reason; cross-organization access returns `404`.
 
 Quick add API details:
 
 - `GET /api/event-occurrences/{occurrence}/eligible-participants` accepts `search`, `page`, and `per_page`. Search matches `first_name`, `last_name`, `email`, `phone`, and `user_code`.
 - Eligible-participants responses are paginated user resources with `active_services` loaded, `has_active_service`, and no users already attached to the occurrence.
-- `POST /api/event-occurrences/{occurrence}/participants/bulk` body: `user_ids` required array of distinct user IDs, optional `status`, optional `registered_at`, optional `notes`.
+- `POST /api/event-occurrences/{occurrence}/participants/bulk` body: `user_ids` required array of distinct user IDs, optional `status`, optional `registered_at`, optional `notes`, optional `apply_to_future_occurrences` boolean (default `false`).
 - Bulk add defaults `status` to `registered` and `registered_at` to the current timestamp.
-- Bulk add is atomic: duplicates, ineligible users, missing users, or insufficient available places reject the whole request.
+- Bulk add on the target occurrence is atomic: duplicates, ineligible users, missing users, or insufficient available places reject the whole request.
+- `apply_to_future_occurrences: true` additionally mirrors the same `user_ids` onto the sibling **scheduled** occurrences of the same event with `occurrence_date` today or later (today inclusive, same "future" definition as `EventOccurrenceGeneratorService::regenerateFutureOpenOccurrences`), excluding the explicitly targeted occurrence and excluding `cancelled`/`completed` ones. This mirrors the flow staff previously repeated manually per occurrence for recurring (weekly/monthly) classes. Unlike the target occurrence, this pass is **best effort per occurrence/per user** and reuses `EventParticipantService::isAlreadyRegistered()`/`isEligible()`/`hasAvailableCapacity()` for each future occurrence independently: a full future occurrence, an already-registered user on one future occurrence, or a missing/exhausted required-service access for one user never fails the whole request or the other future occurrences — each outcome is only reported back. When the required service must be consumed (`Event::required_service_id` with a finite `max_accesses`) and the consumption fails at attach time, that user is skipped for that occurrence with reason `service_access_unavailable` instead of raising an error.
+- The response then includes `future_occurrences_updated`: an array with one entry per matched future occurrence, `{"occurrence_id", "occurrence_date", "added_user_ids": [...], "skipped": [{"user_id", "reason"}, ...]}`, where `reason` is one of `already_registered`, `missing_required_service`, `capacity_full`, `service_access_unavailable`. The key is present only when `apply_to_future_occurrences` was `true` in the request (it is omitted entirely, not just empty, when the flag is absent or `false`, so the existing response shape for the current single-occurrence behavior is unchanged); if `apply_to_future_occurrences` is `true` but no matching future occurrences exist, the key is present with an empty array.
+
+Centralized participant eligibility (`app/Events/Services/EventParticipantService.php`):
+
+- Duplicate registration, active-service eligibility, capacity, and the `requires_payment` signal used to be reimplemented separately in `EventParticipantController::store/bulkStore/update` and `CheckInService::verdict/confirm`, with divergent behavior. They now share `EventParticipantService`, which exposes `evaluate()` (single-pass check: duplicate + eligibility + capacity + informational `requires_payment`, used by `store`), plus the composable `isAlreadyRegistered()`, `isEligible()`, `hasAvailableCapacity()`, and `requiresPayment()` methods reused by `bulkStore`, the reactivation branch of `update`, `CheckInService`, and the `apply_to_future_occurrences` best-effort pass in `bulkStore` (see below).
+- `POST /api/event-occurrences/{occurrence}/participants` and `POST /api/event-occurrences/{occurrence}/participants/bulk` now always return a top-level `requires_payment` boolean in the success response, mirroring the parent event's `requires_payment` flag. This is informational only: it never blocks adding a participant through these two endpoints, unlike check-in (see CheckIns section), where `requires_payment` remains a blocking condition. Duplicate registration, missing required service, and capacity-full remain blocking with the same status codes/messages as before (`422`/`403`/`400`).
+- `CheckInService` keeps its own, narrower "already present" concept local (only an existing `attended` pivot row blocks a check-in; a merely `registered` participant can still check in), plus `document_expired` and `member_inactive`, since these are specific to the check-in flow and not shared with the participant-add endpoints.
 
 ### Articles and Announcements
 
@@ -517,6 +544,7 @@ Functional behavior:
 - `SendNotificationDelivery` creates `notification_attempts`, sends through `NotificationSender`, and updates delivery status.
 - Failed sends are retried by Laravel queue using configured tries/backoff.
 - Templates live in `config/notifications.php` and use placeholders like `:service`, `:expires_at`, `:event`, `:message`.
+- Event types include `service.activated`, `service.expiring`, `service.expired`, `schedule.changed`, `activity.resumed`, `announcement.urgent`, and `occurrence.cancelled` (dispatched by `EventOccurrenceController::cancel()` to participants of a cancelled occurrence).
 
 Known overlap:
 
@@ -665,6 +693,8 @@ Endpoint-urile cer bearer auth si dreptul `checkins.manage` sau `event_participa
 Implementarea principala este in `app/CheckIns/Http/Controllers/Api/CheckInController.php`, request-urile din `app/CheckIns/Http/Requests`, `app/CheckIns/Http/Resources/CheckInResource.php` si `app/CheckIns/Services/CheckInService.php`; rutele sunt in `routes/event.php`. Drepturile sunt seeduite in `database/seeders/DatabaseSeeder.php`.
 
 Check-in-ul legat de o clasa reutilizeaza pivotul `event_occurrence_user` si salveaza participantul cu status `attended`. Daca evenimentul cere un serviciu cu limita de intrari, consumul trece prin `ServiceLifecycleService::consumeEventAccess()` in aceeasi tranzactie cu atasarea participantului. Cand operatorul foloseste `allow_override=true` peste un acces invalid, prezenta se marcheaza ca exceptie si nu se consuma intrare dintr-un abonament lipsa sau neeligibil. Raspunsul include membrul gasit, verdictul (`allowed`, `override_allowed`, `refused`, `requires_payment`, `document_expired`, `already_present`, `not_found`), abonamentul activ, serviciile eligibile, motivul refuzului, clasa si ultimul check-in relevant.
+
+`CheckInService::verdict()`/`confirm()` folosesc `app/Events/Services/EventParticipantService.php` pentru eligibilitate (serviciu activ), capacitate maxima si semnalul `requires_payment` — aceleasi metode centrale folosite si de `EventParticipantController` pentru adaugarea participantilor. Spre deosebire de `store`/`bulkStore` (unde `requires_payment` e doar informativ), la check-in `requires_payment` ramane un motiv de blocare: verdictul devine `requires_payment` si `access_allowed=false` daca evenimentul cere plata. Conceptul de "deja prezent" ramane specific check-in-ului: doar un rand pivot existent cu status `attended` blocheaza (un participant cu status `registered` poate fi in continuare confirmat prezent), spre deosebire de `store`/`bulkStore`, unde orice rand pivot existent (indiferent de status) e considerat duplicat si blocheaza adaugarea.
 
 Datele sunt tenant-safe prin scope-urile modelelor `User` si `EventOccurrence`, iar cautarea membrilor pastreaza si filtrarea de locatie aplicata pe `User`. Check-in-urile acceptate si refuzate scriu audit/business activity cu tipurile `checkin.accepted` si `checkin.refused` in `audit_logs`.
 

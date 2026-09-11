@@ -18,7 +18,21 @@ class EventResource extends JsonResource
             'category' => new EventCategoryResource($this->whenLoaded('category')),
             'title' => $this->title,
             'description' => $this->description,
-            'location' => $this->location,
+            // Free-text fallback location label (used for ad-hoc events without a structured location).
+            // Not to be confused with `location` below, which is the resolved `location_id` relation.
+            'location_text' => $this->location,
+            'location' => $this->whenLoaded('location', fn () => $this->getRelation('location')
+                ? ['id' => $this->getRelation('location')->id, 'name' => $this->getRelation('location')->name]
+                : null),
+            'instructor' => $this->whenLoaded('instructor', fn () => $this->getRelation('instructor')
+                ? [
+                    'id' => $this->getRelation('instructor')->id,
+                    'name' => trim($this->getRelation('instructor')->first_name.' '.$this->getRelation('instructor')->last_name),
+                ]
+                : null),
+            'group' => $this->whenLoaded('group', fn () => $this->getRelation('group')
+                ? ['id' => $this->getRelation('group')->id, 'name' => $this->getRelation('group')->name]
+                : null),
             'start_time' => $this->start_time,
             'end_time' => $this->end_time,
             'recurrence_type' => $this->recurrence_type,

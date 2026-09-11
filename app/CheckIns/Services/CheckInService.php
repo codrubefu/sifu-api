@@ -3,7 +3,7 @@
 namespace App\CheckIns\Services;
 
 use App\Events\Models\EventOccurrence;
-use App\Events\Services\EventEligibilityService;
+use App\Events\Services\EventParticipantService;
 use App\Service\Services\ServiceLifecycleService;
 use App\Users\Models\AuditLog;
 use App\Users\Models\User;
@@ -14,7 +14,7 @@ use Illuminate\Validation\ValidationException;
 class CheckInService
 {
     public function __construct(
-        private readonly EventEligibilityService $eligibility,
+        private readonly EventParticipantService $participants,
         private readonly ServiceLifecycleService $serviceLifecycle,
         private readonly BusinessActivityLogger $activityLogger,
     ) {}
@@ -72,7 +72,7 @@ class CheckInService
 
         $participant = DB::transaction(function () use ($member, $occurrence, $notes, $shouldConsumeAccess): User {
             $lockedOccurrence = EventOccurrence::query()->with('event.requiredService')->lockForUpdate()->findOrFail($occurrence->id);
-            if ($lockedOccurrence->participants()->whereKey($member->id)->exists()) {
+            if ($this->participants->isAlreadyRegistered($lockedOccurrence, $member->id)) {
                 throw ValidationException::withMessages(['user_id' => 'already_present']);
             }
 
@@ -160,16 +160,15 @@ class CheckInService
             return array_merge($result, ['verdict' => 'already_present', 'access_allowed' => false, 'reason' => 'already_present']);
         }
 
-        if ($occurrence->event->requires_payment) {
+        if ($this->participants->requiresPayment($occurrence)) {
             return array_merge($result, ['verdict' => 'requires_payment', 'access_allowed' => false, 'reason' => 'requires_payment', 'requires_payment' => true]);
         }
 
-        if (! $this->eligibility->canUserJoinOccurrence($member, $occurrence)) {
+        if (! $this->participants->isEligible($member, $occurrence)) {
             return array_merge($result, ['verdict' => 'refused', 'access_allowed' => false, 'reason' => 'missing_required_service']);
         }
 
-        $maxParticipants = $occurrence->event->max_participants;
-        if ($maxParticipants !== null && $occurrence->activeParticipants()->count() >= $maxParticipants) {
+        if (! $this->participants->hasAvailableCapacity($occurrence)) {
             return array_merge($result, ['verdict' => 'refused', 'access_allowed' => false, 'reason' => 'capacity_full']);
         }
 

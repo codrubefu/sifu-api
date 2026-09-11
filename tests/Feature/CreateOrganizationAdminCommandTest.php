@@ -46,6 +46,10 @@ class CreateOrganizationAdminCommandTest extends TestCase
         $this->assertTrue($user->groups()->whereKey($adminGroup->id)->exists());
         $this->assertTrue($adminGroup->rights()->where('name', 'users.manage')->exists());
         $this->assertTrue($adminGroup->rights()->where('name', 'custom-fields.manage')->exists());
+        $this->assertTrue($adminGroup->rights()->where('name', 'grades.view')->exists());
+        $this->assertTrue($adminGroup->rights()->where('name', 'grades.manage')->exists());
+        $this->assertTrue($adminGroup->rights()->where('name', 'location_groups.manage')->exists());
+        $this->assertTrue($adminGroup->rights()->where('name', 'smtp_settings.manage')->exists());
         $this->assertSame(['profile.view'], $userGroup->rights()->pluck('name')->all());
     }
 

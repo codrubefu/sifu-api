@@ -184,6 +184,33 @@ class EventParticipantCrudTest extends TestCase
                 'user_id' => $participant->id,
             ])
             ->assertCreated()
+            ->assertJsonPath('data.status', 'registered')
+            ->assertJsonPath('requires_payment', false);
+
+        $this->assertDatabaseHas('event_occurrence_user', [
+            'event_occurrence_id' => $occurrence->id,
+            'user_id' => $participant->id,
+            'status' => 'registered',
+        ]);
+    }
+
+    public function test_adding_occurrence_participant_signals_requires_payment_without_blocking(): void
+    {
+        [$admin, $token] = $this->authenticatedUserWithRights(['event_participants.manage']);
+        $participant = User::factory()->create(['organization_id' => $admin->organization_id]);
+        $event = Event::query()->create($this->eventData([
+            'requires_payment' => true,
+            'payment_amount' => 49.99,
+            'payment_type' => 'card',
+        ]));
+        $occurrence = $this->occurrence($event);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/event-occurrences/{$occurrence->id}/participants", [
+                'user_id' => $participant->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('requires_payment', true)
             ->assertJsonPath('data.status', 'registered');
 
         $this->assertDatabaseHas('event_occurrence_user', [
@@ -191,6 +218,35 @@ class EventParticipantCrudTest extends TestCase
             'user_id' => $participant->id,
             'status' => 'registered',
         ]);
+    }
+
+    public function test_bulk_add_occurrence_participants_signals_requires_payment_without_blocking(): void
+    {
+        [$admin, $token] = $this->authenticatedUserWithRights(['event_participants.manage']);
+        $first = User::factory()->create(['organization_id' => $admin->organization_id]);
+        $second = User::factory()->create(['organization_id' => $admin->organization_id]);
+        $event = Event::query()->create($this->eventData([
+            'requires_payment' => true,
+            'payment_amount' => 29.5,
+            'payment_type' => 'cash',
+        ]));
+        $occurrence = $this->occurrence($event);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/event-occurrences/{$occurrence->id}/participants/bulk", [
+                'user_ids' => [$first->id, $second->id],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('requires_payment', true)
+            ->assertJsonCount(2, 'data');
+
+        foreach ([$first, $second] as $participant) {
+            $this->assertDatabaseHas('event_occurrence_user', [
+                'event_occurrence_id' => $occurrence->id,
+                'user_id' => $participant->id,
+                'status' => 'registered',
+            ]);
+        }
     }
 
     public function test_adding_event_participant_consumes_one_required_service_access(): void

@@ -7,7 +7,7 @@ use App\Events\Http\Requests\BulkAddEventParticipantsRequest;
 use App\Events\Http\Requests\UpdateEventParticipantRequest;
 use App\Events\Http\Resources\EventParticipantResource;
 use App\Events\Models\EventOccurrence;
-use App\Events\Services\EventEligibilityService;
+use App\Events\Services\EventParticipantService;
 use App\Events\Services\OccurrenceAttendancePdfService;
 use App\Service\Services\ServiceLifecycleService;
 use App\Users\Http\Controllers\Controller;
@@ -23,7 +23,7 @@ use Symfony\Component\HttpFoundation\Response;
 class EventParticipantController extends Controller
 {
     public function __construct(
-        private readonly EventEligibilityService $eligibility,
+        private readonly EventParticipantService $participants,
         private readonly ServiceLifecycleService $serviceLifecycle,
     )
     {
@@ -120,14 +120,14 @@ class EventParticipantController extends Controller
     #[OA\Post(
         path: '/event-occurrences/{occurrence}/participants',
         summary: 'Add occurrence participant',
-        description: 'Adds a user to an occurrence after duplicate, capacity, and active-service eligibility checks. When the event requires a limited service, one access is consumed atomically from the user service assignment.',
+        description: 'Adds a user to an occurrence after duplicate, capacity, and active-service eligibility checks. When the event requires a limited service, one access is consumed atomically from the user service assignment. The response always includes a `requires_payment` flag mirroring the parent event; it is informational only and never blocks the addition.',
         security: [['bearerAuth' => []]],
         tags: ['Event Participants'],
         parameters: [new OA\PathParameter(name: 'occurrence', required: true, schema: new OA\Schema(type: 'integer'))],
         requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(ref: '#/components/schemas/AddEventParticipantRequest')),
         responses: [
             new OA\Response(response: 200, description: 'Success.', content: new OA\JsonContent(ref: '#/components/schemas/StandardSuccessResponse')),
-            new OA\Response(response: 201, description: 'Participant added.', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/EventParticipant')])),
+            new OA\Response(response: 201, description: 'Participant added.', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/EventParticipant'), new OA\Property(property: 'requires_payment', type: 'boolean', example: false)])),
             new OA\Response(response: 400, description: 'Bad request.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
             new OA\Response(response: 401, description: 'Unauthenticated.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
             new OA\Response(response: 403, description: 'Forbidden.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
@@ -141,17 +141,14 @@ class EventParticipantController extends Controller
         $user = User::query()->findOrFail($data['user_id']);
         $occurrence->load('event.requiredService');
 
-        if ($occurrence->participants()->whereKey($user->id)->exists()) {
-            return $this->error('User is already registered for this occurrence.', 422);
-        }
+        $result = $this->participants->evaluate($user, $occurrence);
 
-        if (! $this->eligibility->canUserJoinOccurrence($user, $occurrence)) {
-            return $this->error('User does not have the required active service.', 403);
-        }
-
-        $maxParticipants = $occurrence->event->max_participants;
-        if ($maxParticipants !== null && $occurrence->activeParticipants()->count() >= $maxParticipants) {
-            return $this->error('Event occurrence has reached the maximum number of participants.', 400);
+        if (! $result->ok) {
+            return match ($result->reason) {
+                'already_registered' => $this->error('User is already registered for this occurrence.', 422),
+                'missing_required_service' => $this->error('User does not have the required active service.', 403),
+                default => $this->error('Event occurrence has reached the maximum number of participants.', 400),
+            };
         }
 
         DB::transaction(function () use ($occurrence, $user, $data): void {
@@ -169,13 +166,14 @@ class EventParticipantController extends Controller
             'success' => true,
             'message' => 'Participant added successfully.',
             'data' => new EventParticipantResource($participant),
+            'requires_payment' => $result->requiresPayment,
         ], 201);
     }
 
     #[OA\Post(
         path: '/event-occurrences/{occurrence}/participants/bulk',
         summary: 'Add multiple occurrence participants',
-        description: 'Adds multiple users to an occurrence after duplicate, capacity, and active-service eligibility checks. When the event requires a limited service, one access is consumed per user. The operation is atomic.',
+        description: 'Adds multiple users to an occurrence after duplicate, capacity, and active-service eligibility checks. When the event requires a limited service, one access is consumed per user. The operation on the target occurrence is atomic. The response always includes a `requires_payment` flag mirroring the parent event; it is informational only and never blocks the addition. When `apply_to_future_occurrences` is true, the same users are also mirrored (best effort) onto the sibling scheduled future occurrences (today or later) of the same event; per-occurrence/per-user failures there (already registered, full capacity, missing required service, no service access to consume) are reported in `future_occurrences_updated` instead of failing the whole request.',
         security: [['bearerAuth' => []]],
         tags: ['Event Participants'],
         parameters: [new OA\PathParameter(name: 'occurrence', required: true, schema: new OA\Schema(type: 'integer'))],
@@ -196,7 +194,7 @@ class EventParticipantController extends Controller
         $status = $data['status'] ?? 'registered';
         $occurrence->load('event.requiredService');
 
-        if ($occurrence->participants()->whereKey($userIds)->exists()) {
+        if ($this->participants->isAlreadyRegistered($occurrence, $userIds)) {
             return $this->error('One or more users are already registered for this occurrence.', 422);
         }
 
@@ -207,19 +205,17 @@ class EventParticipantController extends Controller
         }
 
         foreach ($users as $user) {
-            if (! $this->eligibility->canUserJoinOccurrence($user, $occurrence)) {
+            if (! $this->participants->isEligible($user, $occurrence)) {
                 return $this->error('One or more users do not have the required active service.', 403);
             }
         }
 
         $activeStatuses = ['registered', 'attended'];
-        $maxParticipants = $occurrence->event->max_participants;
-        if ($maxParticipants !== null && in_array($status, $activeStatuses, true)) {
-            $availablePlaces = $maxParticipants - $occurrence->activeParticipants()->count();
-            if (count($userIds) > $availablePlaces) {
-                return $this->error('Event occurrence does not have enough available places.', 400);
-            }
+        if (in_array($status, $activeStatuses, true) && ! $this->participants->hasAvailableCapacity($occurrence, count($userIds))) {
+            return $this->error('Event occurrence does not have enough available places.', 400);
         }
+
+        $requiresPayment = $this->participants->requiresPayment($occurrence);
 
         DB::transaction(function () use ($occurrence, $userIds, $users, $data, $status): void {
             $attributes = [];
@@ -240,11 +236,97 @@ class EventParticipantController extends Controller
 
         $participants = $occurrence->participants()->whereKey($userIds)->orderBy('last_name')->orderBy('first_name')->get();
 
-        return response()->json([
+        $response = [
             'success' => true,
             'message' => 'Participants added successfully.',
             'data' => EventParticipantResource::collection($participants),
-        ], 201);
+            'requires_payment' => $requiresPayment,
+        ];
+
+        if ($data['apply_to_future_occurrences'] ?? false) {
+            $response['future_occurrences_updated'] = $this->applyToFutureOccurrences($occurrence, $users, $status, $data);
+        }
+
+        return response()->json($response, 201);
+    }
+
+    /**
+     * Best-effort mirror of a bulk add onto the sibling future occurrences of
+     * the same event (same recurring series). Unlike the primary target
+     * occurrence handled above, a failure for one user or one occurrence
+     * (already registered, no capacity, missing required service, or no
+     * available service access to consume) never aborts the whole operation;
+     * it is only reported back per occurrence so the caller can show a
+     * summary such as "added to N future occurrences, M skipped".
+     *
+     * "Future" means scheduled occurrences of the same event with
+     * `occurrence_date` today or later (today inclusive, matching
+     * `EventOccurrenceGeneratorService::regenerateFutureOpenOccurrences`),
+     * excluding the occurrence explicitly targeted by this request and
+     * excluding cancelled/completed occurrences.
+     *
+     * @param \Illuminate\Support\Collection<int, User> $users
+     * @return array<int, array{occurrence_id: int, occurrence_date: string, added_user_ids: array<int, int>, skipped: array<int, array{user_id: int, reason: string}>}>
+     */
+    private function applyToFutureOccurrences(EventOccurrence $occurrence, \Illuminate\Support\Collection $users, string $status, array $data): array
+    {
+        $activeStatuses = ['registered', 'attended'];
+
+        $futureOccurrences = $occurrence->event->occurrences()
+            ->where('id', '!=', $occurrence->id)
+            ->where('status', 'scheduled')
+            ->whereDate('occurrence_date', '>=', now()->toDateString())
+            ->orderBy('occurrence_date')
+            ->get();
+
+        $summary = [];
+
+        foreach ($futureOccurrences as $futureOccurrence) {
+            $addedUserIds = [];
+            $skipped = [];
+
+            foreach ($users as $user) {
+                if ($this->participants->isAlreadyRegistered($futureOccurrence, $user->id)) {
+                    $skipped[] = ['user_id' => $user->id, 'reason' => 'already_registered'];
+                    continue;
+                }
+
+                if (! $this->participants->isEligible($user, $futureOccurrence)) {
+                    $skipped[] = ['user_id' => $user->id, 'reason' => 'missing_required_service'];
+                    continue;
+                }
+
+                if (in_array($status, $activeStatuses, true) && ! $this->participants->hasAvailableCapacity($futureOccurrence)) {
+                    $skipped[] = ['user_id' => $user->id, 'reason' => 'capacity_full'];
+                    continue;
+                }
+
+                try {
+                    DB::transaction(function () use ($futureOccurrence, $user, $status, $data): void {
+                        $this->serviceLifecycle->consumeEventAccess($user, $futureOccurrence->event);
+                        $futureOccurrence->participants()->attach($user->id, [
+                            'status' => $status,
+                            'registered_at' => $data['registered_at'] ?? now(),
+                            'notes' => $data['notes'] ?? null,
+                        ]);
+                    });
+                } catch (\Illuminate\Validation\ValidationException) {
+                    $skipped[] = ['user_id' => $user->id, 'reason' => 'service_access_unavailable'];
+                    continue;
+                }
+
+                $addedUserIds[] = $user->id;
+            }
+
+            $summary[] = [
+                'occurrence_id' => $futureOccurrence->id,
+                'occurrence_date' => $futureOccurrence->occurrence_date->toDateString(),
+                'added_user_ids' => $addedUserIds,
+                'skipped' => $skipped,
+            ];
+        }
+
+        return $summary;
     }
 
     #[OA\Patch(
@@ -285,12 +367,11 @@ class EventParticipantController extends Controller
         if ($isActivatingParticipant) {
             $occurrence->load('event.requiredService');
 
-            if (! $this->eligibility->canUserJoinOccurrence($user, $occurrence)) {
+            if (! $this->participants->isEligible($user, $occurrence)) {
                 return $this->error('User does not have the required active service.', 403);
             }
 
-            $maxParticipants = $occurrence->event->max_participants;
-            if ($maxParticipants !== null && $occurrence->activeParticipants()->count() >= $maxParticipants) {
+            if (! $this->participants->hasAvailableCapacity($occurrence)) {
                 return $this->error('Event occurrence has reached the maximum number of participants.', 400);
             }
         }

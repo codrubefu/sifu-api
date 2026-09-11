@@ -9,5 +9,6 @@ return [
         'schedule.changed' => 'Programul pentru :event a fost modificat.',
         'announcement.urgent' => 'URGENT: :message',
         'activity.resumed' => 'Activitatea :event a fost reluată.',
+        'occurrence.cancelled' => 'Ședința pentru :event a fost anulată.',
     ],
 ];

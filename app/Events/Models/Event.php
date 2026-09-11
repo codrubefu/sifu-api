@@ -3,7 +3,10 @@
 namespace App\Events\Models;
 
 use App\Service\Models\Service;
+use App\Users\Models\Group;
+use App\Users\Models\Location;
 use App\Users\Models\Organization;
+use App\Users\Models\User;
 use App\Users\Models\Concerns\BelongsToAuthenticatedOrganization;
 use App\Users\Models\Concerns\LogsModelChanges;
 use App\Users\Models\Concerns\SetsOrganizationFromAuthenticatedUser;
@@ -43,6 +46,21 @@ class Event extends Model
     public function requiredService(): BelongsTo
     {
         return $this->belongsTo(Service::class, 'required_service_id');
+    }
+
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class);
+    }
+
+    public function instructor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'instructor_id');
+    }
+
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(Group::class);
     }
 
     protected function casts(): array

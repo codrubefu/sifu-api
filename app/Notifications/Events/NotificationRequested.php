@@ -16,6 +16,7 @@ class NotificationRequested
     public const SCHEDULE_CHANGED = 'schedule.changed';
     public const URGENT_ANNOUNCEMENT = 'announcement.urgent';
     public const RESUMED = 'activity.resumed';
+    public const OCCURRENCE_CANCELLED = 'occurrence.cancelled';
 
     public function __construct(
         public User $user,

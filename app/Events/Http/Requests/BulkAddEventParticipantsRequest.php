@@ -20,6 +20,7 @@ class BulkAddEventParticipantsRequest extends FormRequest
             'status' => ['sometimes', Rule::in(['registered', 'attended', 'cancelled', 'no_show'])],
             'registered_at' => ['nullable', 'date'],
             'notes' => ['nullable', 'string'],
+            'apply_to_future_occurrences' => ['sometimes', 'boolean'],
         ];
     }
 }

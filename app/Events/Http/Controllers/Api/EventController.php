@@ -57,7 +57,7 @@ class EventController extends Controller
         $direction = $request->string('direction')->toString() === 'asc' ? 'asc' : 'desc';
 
         $events = Event::query()
-            ->with(['category', 'requiredService'])
+            ->with(['category', 'requiredService', 'location', 'instructor', 'group'])
             ->withCount('occurrences')
             ->when($request->filled('category_id'), fn ($query) => $query->where('category_id', $request->integer('category_id')))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')->toString()))
@@ -100,7 +100,7 @@ class EventController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Event created successfully.',
-            'data' => new EventResource($event->load(['category', 'requiredService', 'occurrences'])->loadCount('occurrences')),
+            'data' => new EventResource($event->load(['category', 'requiredService', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
         ], 201);
     }
 
@@ -121,12 +121,14 @@ class EventController extends Controller
             new OA\Response(response: 422, description: 'Validation error.', content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')),
         ],
     )]
-    public function show(Event $event): JsonResponse
+    public function show(Request $request, Event $event): JsonResponse
     {
+        abort_unless((int) $event->organization_id === (int) $request->user()->organization_id, 404);
+
         return response()->json([
             'success' => true,
             'message' => 'Event retrieved successfully.',
-            'data' => new EventResource($event->load(['category', 'requiredService', 'occurrences'])->loadCount('occurrences')),
+            'data' => new EventResource($event->load(['category', 'requiredService', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
         ]);
     }
 
@@ -168,6 +170,8 @@ class EventController extends Controller
     )]
     public function update(UpdateEventRequest $request, Event $event): JsonResponse
     {
+        abort_unless((int) $event->organization_id === (int) $request->user()->organization_id, 404);
+
         DB::transaction(function () use ($request, $event): void {
             $oldStatus = $event->status;
             $event->update($request->validated());
@@ -197,7 +201,7 @@ class EventController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Event updated successfully.',
-            'data' => new EventResource($event->load(['category', 'requiredService', 'occurrences'])->loadCount('occurrences')),
+            'data' => new EventResource($event->load(['category', 'requiredService', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
         ]);
     }
 
@@ -218,8 +222,10 @@ class EventController extends Controller
             new OA\Response(response: 422, description: 'Validation error.', content: new OA\JsonContent(ref: '#/components/schemas/ValidationErrorResponse')),
         ],
     )]
-    public function destroy(Event $event): JsonResponse
+    public function destroy(Request $request, Event $event): JsonResponse
     {
+        abort_unless((int) $event->organization_id === (int) $request->user()->organization_id, 404);
+
         DB::transaction(function () use ($event): void {
             $event->occurrences()
                 ->whereDate('occurrence_date', '>=', now()->toDateString())

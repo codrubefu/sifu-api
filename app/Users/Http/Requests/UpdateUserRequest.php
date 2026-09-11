@@ -2,6 +2,7 @@
 
 namespace App\Users\Http\Requests;
 
+use App\Users\Support\OrganizationScopedExistsRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -49,7 +50,7 @@ class UpdateUserRequest extends FormRequest
             'parent_user_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('users', 'id')->where('organization_id', $user?->organization_id),
+                OrganizationScopedExistsRule::make('users', 'id', $user?->organization_id),
                 function (string $attribute, mixed $value, \Closure $fail) use ($user): void {
                     if ($user && (int) $value === (int) $user->id) {
                         $fail('A user cannot be their own parent.');

@@ -3,6 +3,7 @@
 namespace App\Events\Http\Requests;
 
 use App\Payments\Models\Payment;
+use App\Users\Support\OrganizationScopedExistsRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -37,12 +38,11 @@ class StoreEventRequest extends FormRequest
         return [
             'category_id' => [
                 'nullable',
-                Rule::exists('event_categories', 'id')
-                    ->where(fn ($query) => $query->where('organization_id', $this->user()?->organization_id)),
+                OrganizationScopedExistsRule::make('event_categories', 'id', $this->user()?->organization_id),
             ],
-            'location_id' => ['nullable', Rule::exists('locations', 'id')->where(fn ($query) => $query->where('organization_id', $this->user()?->organization_id))],
-            'instructor_id' => ['nullable', Rule::exists('users', 'id')->where(fn ($query) => $query->where('organization_id', $this->user()?->organization_id))],
-            'group_id' => ['nullable', Rule::exists('groups', 'id')->where(fn ($query) => $query->where('organization_id', $this->user()?->organization_id))],
+            'location_id' => ['nullable', OrganizationScopedExistsRule::make('locations', 'id', $this->user()?->organization_id)],
+            'instructor_id' => ['nullable', OrganizationScopedExistsRule::make('users', 'id', $this->user()?->organization_id)],
+            'group_id' => ['nullable', OrganizationScopedExistsRule::make('groups', 'id', $this->user()?->organization_id)],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'location' => ['nullable', 'string', 'max:255'],

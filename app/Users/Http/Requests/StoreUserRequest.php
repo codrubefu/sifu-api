@@ -4,6 +4,7 @@ namespace App\Users\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use App\Users\Support\OrganizationScopedExistsRule;
 use App\Users\Support\PasswordPolicy;
 
 class StoreUserRequest extends FormRequest
@@ -41,7 +42,7 @@ class StoreUserRequest extends FormRequest
             'parent_user_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('users', 'id')->where('organization_id', $this->user()?->organization_id),
+                OrganizationScopedExistsRule::make('users', 'id', $this->user()?->organization_id),
             ],
             'password' => ['sometimes', 'nullable', 'string', PasswordPolicy::for($this->is('api/administrators*') ? 'administrator' : 'operator')],
             'notification_consents' => ['sometimes', 'array:sms,mail,push'],

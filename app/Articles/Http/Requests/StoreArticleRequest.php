@@ -3,6 +3,7 @@
 namespace App\Articles\Http\Requests;
 
 use App\Articles\Models\Article;
+use App\Users\Support\OrganizationScopedExistsRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -23,11 +24,11 @@ class StoreArticleRequest extends FormRequest
             'priority' => ['sometimes', 'integer', 'min:0'],
             'status' => ['sometimes', Rule::in(Article::STATUSES)],
             'audience_segment' => ['sometimes', Rule::in(Article::AUDIENCE_SEGMENTS)],
-            'segment_id' => ['nullable', 'integer', Rule::exists('segments', 'id')->where('organization_id', $this->user()->organization_id)],
+            'segment_id' => ['nullable', 'integer', OrganizationScopedExistsRule::make('segments', 'id', $this->user()?->organization_id)],
             'groups' => ['sometimes', 'array'],
-            'groups.*' => ['integer', Rule::exists('groups', 'id')->where('organization_id', $this->user()->organization_id)],
+            'groups.*' => ['integer', OrganizationScopedExistsRule::make('groups', 'id', $this->user()?->organization_id)],
             'locations' => ['sometimes', 'array'],
-            'locations.*' => ['integer', Rule::exists('locations', 'id')->where('organization_id', $this->user()->organization_id)],
+            'locations.*' => ['integer', OrganizationScopedExistsRule::make('locations', 'id', $this->user()?->organization_id)],
         ];
     }
 }
