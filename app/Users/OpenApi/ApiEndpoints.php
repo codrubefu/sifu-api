@@ -88,6 +88,62 @@ class ApiEndpoints
     }
 
     #[OA\Get(
+        path: '/organizations/by-url',
+        summary: 'Find organization by frontend URL',
+        description: 'Resolves a tenant organization from the full frontend origin the request was made from. Matching is case-insensitive and tolerant of a trailing slash. Rate limited because it is called on every unauthenticated page load.',
+        tags: ['Auth'],
+        parameters: [
+            new OA\QueryParameter(
+                name: 'url',
+                required: true,
+                schema: new OA\Schema(type: 'string'),
+                example: 'https://acme.example.com',
+            ),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Organization found.',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(
+                            property: 'data',
+                            properties: [
+                                new OA\Property(property: 'id', type: 'integer', example: 1),
+                                new OA\Property(property: 'slug', type: 'string', example: 'acme'),
+                                new OA\Property(property: 'url', type: 'string', nullable: true, description: 'Frontend URL for this organization; used to build links sent by e-mail.', example: 'https://acme.example.com'),
+                                new OA\Property(property: 'name', type: 'string', example: 'Acme SRL'),
+                                new OA\Property(property: 'address', type: 'string', nullable: true, example: 'Str. Exemplu 1, Bucuresti'),
+                                new OA\Property(property: 'email', type: 'string', nullable: true, example: 'office@acme.test'),
+                                new OA\Property(property: 'phone', type: 'string', nullable: true, example: '+40740111222'),
+                                new OA\Property(property: 'web', type: 'string', nullable: true, example: 'https://acme.test'),
+                                new OA\Property(property: 'cui', type: 'string', nullable: true, example: 'RO12345678'),
+                                new OA\Property(property: 'nr_reg_com', type: 'string', nullable: true, example: 'J40/1234/2026'),
+                                new OA\Property(property: 'capital', type: 'string', nullable: true, example: '200 RON'),
+                                new OA\Property(property: 'cont', type: 'string', nullable: true, example: 'RO49AAAA1B31007593840000'),
+                                new OA\Property(property: 'bank', type: 'string', nullable: true, example: 'Banca Exemplu'),
+                                new OA\Property(property: 'receipt_code', type: 'string', example: 'CH'),
+                                new OA\Property(property: 'receipt_number', type: 'integer', example: 0),
+                                new OA\Property(property: 'invoice_code', type: 'string', example: 'INV'),
+                                new OA\Property(property: 'invoice_number', type: 'integer', example: 0),
+                                new OA\Property(property: 'bill_code', type: 'string', example: 'BILL'),
+                                new OA\Property(property: 'bill_number', type: 'integer', example: 0),
+                            ],
+                            type: 'object',
+                        ),
+                    ],
+                    type: 'object',
+                ),
+            ),
+            new OA\Response(response: 404, description: 'Organization not found.'),
+            new OA\Response(response: 429, description: 'Rate limit exceeded.'),
+        ],
+    )]
+    public function organizationByUrl(): void
+    {
+    }
+
+    #[OA\Get(
         path: '/me',
         summary: 'Get the authenticated user',
         security: [['bearerAuth' => []]],

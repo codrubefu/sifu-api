@@ -81,13 +81,13 @@ Security behavior:
 ### API abuse protection and deployment security
 
 - Payment callbacks use the `callbacks` limiter, keyed by IP, declared `X-Organization-Id`, and `X-Provider-Id` or the callback `external_reference`.
-- Financial aggregation/export and dynamic segment member evaluation use the stricter `expensive` limiter, keyed by IP, authenticated organization, and authenticated user ID.
+- Financial aggregation/export and dynamic segment member evaluation use the stricter `expensive` limiter, keyed by IP, authenticated organization, and authenticated user ID. The public `GET /api/organizations/by-url` lookup reuses the same `expensive` limiter; since it is called unauthenticated, it is effectively keyed by IP alone (organization and identity fall back to `none`/`anonymous`).
 - A rate-limit rejection returns HTTP `429`; it does not create payments, exports, audit records, notifications, or other business side effects.
 - `SecurityHeaders` adds HSTS on HTTPS plus content-type, frame, referrer, and permissions protections. Explicit proxy addresses are read from `TRUSTED_PROXIES` so HTTPS and client-IP detection remain trustworthy.
 - Production requirements for HTTPS-only ingress, secure cookies, secret management and branch access through VPN are mandatory and documented in `docs/deployment-security.md`.
 - Relevant implementation files are `AppServiceProvider`, `SecurityHeaders`, `bootstrap/app.php`, `routes/payment.php`, and `routes/reporting.php`; no new database table is introduced by these controls.
 
-The project also supports `GET /api/organizations/slug/{slug}` to resolve organization details before login.
+The project also supports `GET /api/organizations/slug/{slug}` and `GET /api/organizations/by-url?url=...` to resolve organization details before login — the former by slug, the latter by the full frontend origin the request came from (case-insensitive, tolerant of a trailing slash, matched via `LOWER()` comparisons against both the trailing-slash and no-trailing-slash forms so it stays portable between SQLite tests and MySQL). `by-url` is throttled with the `expensive` limiter since the frontend calls it on every unauthenticated page load; `slug` is not throttled.
 
 ### Authorization
 
@@ -756,15 +756,16 @@ Mecanism de token, separat de brokerul standard Laravel (`password_reset_tokens`
 
 E-mailul (`App\Users\Mail\PasswordSetupMail`, cu view `resources/views/emails/users/password-setup.blade.php`) este trimis direct prin `Mail`, **fără** să treacă prin sistemul generic `NotificationRequested` → `NotificationDelivery`. Motivul: acela e condiționat de consimțământul userului pe canalul `mail`, gândit pentru notificări opționale (activare cotizație etc.), iar setarea/resetarea parolei este un e-mail tranzacțional obligatoriu — fără el userul nu se poate autentifica deloc (parola e nullable la creare).
 
-Linkul din e-mail duce spre UI, nu spre acest API, și este construit din URL-ul propriu al organizației, nu dintr-o singură valoare globală: `rtrim($user->organization?->url ?: config('app.frontend_url'), '/') . '/set-password?token=...&email=...'`. Fiecare organizație are acum o coloană `url` (migrația `2026_09_01_000002_add_url_to_organizations_table.php`, nullable, în `Fillable` pe `Organization`) — pentru că `erp-ui` e servit pe origini diferite per organizație (vezi `erp-ui/public/json/organizations.json`), iar link-ul trimis unui user trebuie să deschidă exact origine-a organizației lui, nu un singur domeniu implicit. `frontend_url` din `config/app.php` (env `FRONTEND_URL`, implicit cade pe `APP_URL`) rămâne doar fallback, folosit când organizația nu are încă `url` completat. Singurul loc unde se setează în prezent `organizations.url` este comanda `artisan create:organisation --url=...` (opțiune nouă, opțională, validată cu regula `url`); nu există endpoint HTTP de creare/editare organizații.
+Linkul din e-mail duce spre UI, nu spre acest API, și este construit din URL-ul propriu al organizației, nu dintr-o singură valoare globală: `rtrim($user->organization?->url ?: config('app.frontend_url'), '/') . '/set-password?token=...&email=...'`. Fiecare organizație are acum o coloană `url` (migrația `2026_09_01_000002_add_url_to_organizations_table.php`, nullable, în `Fillable` pe `Organization`) — pentru că `sifu-ui` e servit pe origini diferite per organizație, iar link-ul trimis unui user trebuie să deschidă exact origine-a organizației lui, nu un singur domeniu implicit. Frontend-ul își rezolvă organizația curentă apelând `GET /api/organizations/by-url` cu propria origine, la fiecare încărcare de pagină neautentificată — nu mai printr-un fișier static (`sifu-ui/public/json/organizations.json`, eliminat). `frontend_url` din `config/app.php` (env `FRONTEND_URL`, implicit cade pe `APP_URL`) rămâne doar fallback, folosit când organizația nu are încă `url` completat. Singurul loc unde se setează în prezent `organizations.url` este comanda `artisan create:organisation --url=...` (opțiune nouă, opțională, validată cu regula `url`); nu există endpoint HTTP de creare/editare organizații. Coloana `url` este normalizată automat la salvare (hook `Organization::booted()`, `static::saving`): orice `/` final este tăiat, ca să nu existe ambiguitate între forma stocată și cea căutată.
 
-`GET /api/organizations/slug/{slug}` (`OrganizationController::showBySlug`) expune și el `url`, la fel ca restul câmpurilor publice ale organizației (`web`, `email`, etc.).
+`GET /api/organizations/slug/{slug}` (`OrganizationController::showBySlug`) și `GET /api/organizations/by-url` (`OrganizationController::showByUrl`) expun ambele `url`, la fel ca restul câmpurilor publice ale organizației (`web`, `email`, etc.), prin `OrganizationResource` comun.
 
 Cod relevant:
 
 - `app/Users/Http/Controllers/Api/UserController.php` (`store()` → `sendPasswordSetupEmail()`)
 - `app/Users/Http/Controllers/Api/PasswordResetController.php`
-- `app/Users/Http/Controllers/Api/OrganizationController.php` (`showBySlug()`)
+- `app/Users/Http/Controllers/Api/OrganizationController.php` (`showBySlug()`, `showByUrl()`)
+- `app/Users/Http/Resources/OrganizationResource.php`
 - `app/Users/Http/Requests/ForgotPasswordRequest.php`, `app/Users/Http/Requests/ResetPasswordRequest.php`
 - `app/Users/Services/PasswordSetupTokenService.php`
 - `app/Users/Models/PasswordSetupToken.php`, `app/Users/Models/Organization.php`

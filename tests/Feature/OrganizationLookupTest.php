@@ -61,4 +61,76 @@ class OrganizationLookupTest extends TestCase
         $this->getJson('/api/organizations/slug/missing')
             ->assertNotFound();
     }
+
+    public function test_organization_can_be_found_by_exact_url_without_authentication(): void
+    {
+        $organization = Organization::factory()->create([
+            'slug' => 'acme',
+            'url' => 'https://acme.test',
+        ]);
+
+        $this->getJson('/api/organizations/by-url?url=https://acme.test')
+            ->assertOk()
+            ->assertJsonPath('data.id', $organization->id)
+            ->assertJsonPath('data.slug', 'acme')
+            ->assertJsonPath('data.url', 'https://acme.test');
+    }
+
+    public function test_organization_by_url_lookup_ignores_trailing_slash_in_query(): void
+    {
+        $organization = Organization::factory()->create([
+            'slug' => 'acme',
+            'url' => 'https://acme.test',
+        ]);
+
+        $this->getJson('/api/organizations/by-url?url=https://acme.test/')
+            ->assertOk()
+            ->assertJsonPath('data.id', $organization->id);
+    }
+
+    public function test_organization_by_url_lookup_ignores_trailing_slash_in_stored_value(): void
+    {
+        // The `saving` hook normally strips the trailing slash on write; force it
+        // directly on the column to also cover any pre-existing/legacy data.
+        $organization = Organization::factory()->create([
+            'slug' => 'acme',
+            'url' => 'https://acme.test',
+        ]);
+        $organization->newQueryWithoutScopes()->where('id', $organization->id)->update(['url' => 'https://acme.test/']);
+
+        $this->getJson('/api/organizations/by-url?url=https://acme.test')
+            ->assertOk()
+            ->assertJsonPath('data.id', $organization->id);
+    }
+
+    public function test_organization_by_url_lookup_is_case_insensitive(): void
+    {
+        $organization = Organization::factory()->create([
+            'slug' => 'acme',
+            'url' => 'https://acme.test',
+        ]);
+
+        $this->getJson('/api/organizations/by-url?url=HTTPS://ACME.TEST')
+            ->assertOk()
+            ->assertJsonPath('data.id', $organization->id);
+    }
+
+    public function test_organization_by_url_lookup_returns_not_found_for_unknown_url(): void
+    {
+        $this->getJson('/api/organizations/by-url?url=https://unknown.test')
+            ->assertNotFound();
+    }
+
+    public function test_organization_by_url_lookup_is_callable_without_authorization_header(): void
+    {
+        $organization = Organization::factory()->create([
+            'slug' => 'acme',
+            'url' => 'https://acme.test',
+        ]);
+
+        $this->withHeaders(['Authorization' => ''])
+            ->getJson('/api/organizations/by-url?url=https://acme.test')
+            ->assertOk()
+            ->assertJsonPath('data.id', $organization->id);
+    }
 }

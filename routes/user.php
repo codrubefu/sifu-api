@@ -19,6 +19,7 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:lo
 Route::post('/password/forgot', [PasswordResetController::class, 'sendResetLink'])->middleware('throttle:login');
 Route::post('/password/reset', [PasswordResetController::class, 'reset'])->middleware('throttle:login');
 Route::get('/organizations/slug/{slug}', [OrganizationController::class, 'showBySlug']);
+Route::get('/organizations/by-url', [OrganizationController::class, 'showByUrl'])->middleware('throttle:expensive');
 
 Route::middleware('auth.bearer')->group(function (): void {
     Route::get('/me', [MeController::class, 'show']);

@@ -115,6 +115,7 @@ Public endpoints are exceptions and must be intentional. Current examples:
 - `POST /api/password/forgot` with throttling (`login` limiter)
 - `POST /api/password/reset` with throttling (`login` limiter)
 - `GET /api/organizations/slug/{slug}`
+- `GET /api/organizations/by-url` with throttling (`expensive` limiter) — tenant resolution for the frontend before login, replaces the former static `sifu-ui/public/json/organizations.json` file
 - `POST /api/payments/callback` with throttling
 
 Permission middleware uses:

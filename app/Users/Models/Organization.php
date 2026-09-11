@@ -20,6 +20,15 @@ class Organization extends Model
     use LogsModelChanges;
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::saving(function (Organization $organization): void {
+            if ($organization->url !== null) {
+                $organization->url = rtrim($organization->url, '/');
+            }
+        });
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
