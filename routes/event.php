@@ -7,7 +7,7 @@ use App\Events\Http\Controllers\Api\EventParticipantController;
 use App\CheckIns\Http\Controllers\Api\CheckInController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('auth.bearer')->group(function (): void {
+Route::middleware(['auth.bearer', 'organization.limits'])->group(function (): void {
     Route::get('/event-categories', [EventCategoryController::class, 'index'])
         ->middleware('right:events.view,events.manage');
     Route::post('/event-categories', [EventCategoryController::class, 'store'])

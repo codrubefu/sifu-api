@@ -79,6 +79,7 @@ class EventController extends Controller
         tags: ['Events'],
         requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(ref: '#/components/schemas/StoreEventRequest')),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(response: 200, description: 'Success.', content: new OA\JsonContent(ref: '#/components/schemas/StandardSuccessResponse')),
             new OA\Response(response: 201, description: 'Event created.', content: new OA\JsonContent(properties: [new OA\Property(property: 'success', type: 'boolean'), new OA\Property(property: 'message', type: 'string'), new OA\Property(property: 'data', ref: '#/components/schemas/Event')])),
             new OA\Response(response: 400, description: 'Bad request.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
@@ -173,13 +174,17 @@ class EventController extends Controller
         abort_unless((int) $event->organization_id === (int) $request->user()->organization_id, 404);
 
         DB::transaction(function () use ($request, $event): void {
+            $event->refresh();
             $oldStatus = $event->status;
             $event->update($request->validated());
+            DB::table('organization_event_limit_blocks')->where('event_id', $event->id)->delete();
             $scheduleChanged = array_intersect(
                 ['start_time', 'end_time', 'start_date', 'end_date', 'recurrence_type', 'recurrence_days', 'monthly_day', 'location'],
                 array_keys($event->getChanges()),
             ) !== [];
-            $this->occurrences->regenerateFutureOpenOccurrences($event->refresh());
+            if ($scheduleChanged || $oldStatus !== $event->status) {
+                $this->occurrences->regenerateFutureOpenOccurrences($event->refresh());
+            }
 
             $type = $oldStatus !== 'active' && $event->status === 'active'
                 ? NotificationRequested::RESUMED
@@ -237,6 +242,7 @@ class EventController extends Controller
                 ->whereHas('participants')
                 ->update(['status' => 'cancelled']);
 
+            DB::table('organization_event_limit_blocks')->where('event_id', $event->id)->delete();
             $event->delete();
         });
 

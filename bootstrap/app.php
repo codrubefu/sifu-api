@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.bearer' => AuthenticateBearerToken::class,
             'right' => RequireRight::class,
+            'organization.limits' => \App\Users\Http\Middleware\EnforceOrganizationLimits::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

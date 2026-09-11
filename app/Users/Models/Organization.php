@@ -22,11 +22,20 @@ class Organization extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (Organization $organization): void {
+            $organization->plan_id ??= \Illuminate\Support\Facades\DB::table('organization_plans')->where('code', 'start')->value('id');
+        });
+
         static::saving(function (Organization $organization): void {
             if ($organization->url !== null) {
                 $organization->url = rtrim($organization->url, '/');
             }
         });
+    }
+
+    protected function casts(): array
+    {
+        return ['is_demo' => 'boolean'];
     }
 
     public function users(): HasMany

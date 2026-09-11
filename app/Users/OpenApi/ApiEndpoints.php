@@ -398,6 +398,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/StoreGroupRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 201,
                 description: 'Group created.',
@@ -456,6 +457,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateGroupRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 200,
                 description: 'Group updated.',
@@ -488,6 +490,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateGroupRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 200,
                 description: 'Group updated.',
@@ -516,6 +519,7 @@ class ApiEndpoints
             new OA\PathParameter(name: 'group', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(response: 204, description: 'Group deleted.'),
             new OA\Response(response: 403, description: 'Missing groups.manage right.'),
             new OA\Response(response: 404, description: 'Group not found.'),
@@ -567,6 +571,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/StoreRightRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 201,
                 description: 'Right created.',
@@ -625,6 +630,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateRightRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 200,
                 description: 'Right updated.',
@@ -657,6 +663,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateRightRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 200,
                 description: 'Right updated.',
@@ -685,6 +692,7 @@ class ApiEndpoints
             new OA\PathParameter(name: 'right', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(response: 204, description: 'Right deleted.'),
             new OA\Response(response: 403, description: 'Missing rights.manage right.'),
             new OA\Response(response: 404, description: 'Right not found.'),
@@ -905,6 +913,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/StoreLocationRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 201,
                 description: 'Location created.',
@@ -963,6 +972,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateLocationRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 200,
                 description: 'Location updated.',
@@ -995,6 +1005,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateLocationRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 200,
                 description: 'Location updated.',
@@ -1023,6 +1034,7 @@ class ApiEndpoints
             new OA\PathParameter(name: 'location', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(response: 204, description: 'Location deleted.'),
             new OA\Response(response: 403, description: 'Missing locations.manage right.'),
             new OA\Response(response: 404, description: 'Location not found.'),
@@ -1117,6 +1129,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/StoreUserRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 201,
                 description: 'User created.',
@@ -1230,6 +1243,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateUserRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 200,
                 description: 'User updated.',
@@ -1294,6 +1308,7 @@ class ApiEndpoints
             content: new OA\JsonContent(ref: '#/components/schemas/UpdateUserRequest'),
         ),
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(
                 response: 200,
                 description: 'User updated.',
@@ -1322,6 +1337,7 @@ class ApiEndpoints
             new OA\PathParameter(name: 'user', required: true, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
+            new OA\Response(response: 409, description: 'Organization quota exceeded; operation rolled back. Existing over-limit data is retained; only increasing usage is blocked.', content: new OA\JsonContent(ref: '#/components/schemas/OrganizationLimitError')),
             new OA\Response(response: 204, description: 'Documents deleted, activity anonymized, financial records minimized, and account anonymized.'),
             new OA\Response(response: 403, description: 'Missing users.manage right.'),
             new OA\Response(response: 404, description: 'User not found.'),

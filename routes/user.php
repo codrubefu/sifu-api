@@ -21,7 +21,10 @@ Route::post('/password/reset', [PasswordResetController::class, 'reset'])->middl
 Route::get('/organizations/slug/{slug}', [OrganizationController::class, 'showBySlug']);
 Route::get('/organizations/by-url', [OrganizationController::class, 'showByUrl'])->middleware('throttle:expensive');
 
-Route::middleware('auth.bearer')->group(function (): void {
+Route::middleware(['auth.bearer', 'organization.limits'])->group(function (): void {
+    Route::get('/organization/subscription', [\App\Users\Http\Controllers\Api\OrganizationSubscriptionController::class, 'show'])->middleware('right:organization_subscription.view');
+    Route::post('/organization/subscription/check', [\App\Users\Http\Controllers\Api\OrganizationSubscriptionController::class, 'check'])->middleware('right:organization_subscription.view');
+
     Route::get('/me', [MeController::class, 'show']);
     Route::patch('/me/password', [MeController::class, 'updatePassword']);
     Route::get('/me/custom-fields', [MeController::class, 'customFields']);

@@ -141,7 +141,7 @@ class UserController extends Controller
         });
 
         if (filled($user->email)) {
-            $this->sendPasswordSetupEmail($user);
+            DB::afterCommit(fn () => $this->sendPasswordSetupEmail($user));
         }
 
         return (new UserResource($this->loadUserForResponse($user, $request->user()?->organization_id, true)))

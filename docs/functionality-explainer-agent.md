@@ -335,8 +335,10 @@ Functional behavior:
 - Calendar UIs can load all occurrences through `GET /api/event-occurrences` using `date_from`, `date_to`, `status`, and `category_id`. This read-only calendar endpoint, `GET /api/event-occurrences/{occurrence}`, `GET /api/events/{event}`, and `GET /api/events/{event}/occurrences` require bearer authentication but no `events.view` right, so every logged-in user can inspect the schedule and event details.
 - Administrative event lists, categories, mutations, participants, check-in, and attendance exports still require their existing `events.*`, `event_participants.*`, or `checkins.*` rights.
 - Deleting a category clears `category_id` on related events before soft deleting the category.
-- Creating an event generates initial occurrences.
-- Updating schedule-related fields regenerates future open occurrences.
+- Creating an event generates initial occurrences. A `once` event still creates exactly one occurrence on `start_date`. Weekly and monthly events are materialized only through a rolling two-month horizon, calculated from the current date and capped by `end_date` when it exists.
+- `events.occurrences_generated_until` records the date through which a recurring event has been materialized. `null` identifies one-time events and legacy recurring events that predate the rolling-window feature; legacy events are intentionally not backfilled automatically.
+- The queued `App\\Events\\Jobs\\ExtendRecurringEventOccurrences` job runs daily at 03:00. It extends only active weekly/monthly events with a non-null `occurrences_generated_until`, preserving roughly two months of scheduled occurrences ahead without exceeding `end_date`; its date uniqueness handling makes repeated runs idempotent.
+- Updating schedule-related fields regenerates future open occurrences through the same rolling horizon. Editing a legacy recurring event adopts it into this workflow by setting `occurrences_generated_until`; changing it to `once` clears the field. Reducing `end_date` also reduces the recorded horizon, while occurrences with participants retain the existing preservation behavior.
 - Deleting an event removes future occurrences without participants and cancels future occurrences with participants.
 - Events can require active services and/or payment.
 - Events can require a specific service.
@@ -808,3 +810,69 @@ Observații:
 
 - Drepturile `smtp_settings.view`/`smtp_settings.manage` sunt seedate în `DatabaseSeeder`; grupul `manager` primește doar `smtp_settings.view`.
 - SMS-urile (canalul `sms`) nu sunt afectate — folosesc în continuare `SmsPortalService`/`config/services.php`, nu `smtp_settings`.
+
+## Abonamente și limite pentru organizații
+
+Pachetele comerciale sunt stocate în `organization_plans`: Start (30 EUR/lună, 50 membri activi, 1 locație, 30 apariții/lună, 1 administrator), Plus (60 EUR, 150 membri, 3 locații, 100 apariții/lună, 2 administratori), Pro (100 EUR, 500 membri, 10 locații, apariții și administratori nelimitați). Prețurile sunt informative; această funcționalitate nu facturează, nu încasează și nu expiră abonamente.
+
+`organizations.plan_id` selectează pachetul, implicit Start pentru organizațiile noi și cele existente. `organization_limit_overrides` conține excepții unice pe organizație și `resource` (`members`, `locations`, `events`, `administrators`). Lipsa excepției înseamnă moștenire; `value=NULL` înseamnă nelimitat; zero blochează consumul. Excepțiile au prioritate față de pachet. Modificările DB sunt citite la cererea următoare, fără cache persistent. Modificarea unui pachet afectează toate organizațiile care îl folosesc, exceptând limitele personalizate.
+
+Membrii sunt conturile active fără drepturi atribuite în afară de `profile.view`; administratorii sunt conturile active cu alte drepturi atribuite prin grupurile organizației, inclusiv drepturi temporar dezactivate prin `OrganizationAccessService`. Proprietarul contează ca administrator, un utilizator se numără o singură dată și conturile inactive nu consumă locuri. Ruta `/clients` sau `/administrators` nu determină clasificarea: drepturile grupurilor o determină. Toate locațiile existente se numără, inclusiv cele invizibile operatorului; modelul nu are arhivare. Consumul este întotdeauna agregat pentru întreaga organizație.
+
+Aparițiile `scheduled` și `completed` se numără lunar după `occurrence_date`; `cancelled` nu consumă. Luna implicită este cea curentă în fusul aplicației (UTC în configurația actuală). Sunt numărate aparițiile deja generate, inclusiv cele viitoare din fereastra existentă de două luni; nu se rezervă capacitate pentru întreaga durată a seriilor recurente. Regenerarea verifică diferența netă, păstrând istoricul existent. Crearea sau modificarea manuală este atomică pe toate lunile afectate.
+
+### API și autorizare
+
+- `GET /api/organization/subscription?month=YYYY-MM`: pachet, preț, limite efective și sursa lor (`plan`/`override`), consum, disponibil, depășiri și blocaje ale generatorului de recurențe.
+- `POST /api/organization/subscription/check`: primește `resource`, `quantity` (întreg pozitiv) și `month` obligatoriu pentru evenimente; întoarce `allowed` și detaliile consumului proiectat. Este doar o verificare comercială, fără rezervare și fără acordarea dreptului de a efectua operația.
+
+Ambele endpoint-uri folosesc bearer auth și dreptul `organization_subscription.view`; organizația este exclusiv cea a utilizatorului autentificat. Dreptul este adăugat la migrare grupurilor care au deja drepturi administrative și inclus în bootstrap/seedere. Nu există endpoint HTTP de schimbare a pachetului sau limitelor. Datele abonamentului nu sunt adăugate în endpoint-urile publice de identificare a organizației.
+
+Preflight-ul negativ răspunde HTTP 200 cu `data.allowed=false`. Operațiile efective care cresc consumul peste limită răspund HTTP 409 cu `message` în română, `code=organization_limit_exceeded`, `resource`, `limit`, `used`, `requested`, `projected`, `period` (YYYY-MM pentru evenimente, null în rest). Autentificarea folosește 401, lipsa dreptului 403, validarea 422. Operațiile existente peste limită pot fi citite, reduse sau modificate fără creșterea resursei depășite; nu se șterg automat date.
+
+Implementarea este în `OrganizationSubscriptionService`, `OrganizationSubscriptionController`, Form Requests și `OrganizationSubscriptionResource`, cu rute în `routes/user.php`. `EnforceOrganizationLimits` aplică serviciul tranzacțional pe scrierile din users/clients/administrators, groups/rights, locations, events/event-occurrences. Schimbările de drepturi globale verifică toate organizațiile, cu blocare în ordinea ID-urilor. Verificarea consumului final și scrierea se fac în aceeași tranzacție, după blocarea organizației; orice depășire anulează și asocierile/auditul scrierii. E-mailul de configurare a parolei este programat după commit, pentru a nu trimite acces pentru un cont refuzat. Validarea group_ids la creare/update verifică organizația.
+
+Generatorul `EventOccurrenceGeneratorService` reutilizează același serviciu, inclusiv la apelare din job. `ExtendRecurringEventOccurrences` extinde seriile în ordinea ID-urilor. Dacă o serie nu încape integral, extinderea ei este anulată, cursorul și aparițiile rămân intacte, iar jobul continuă cu celelalte serii. Tabela `organization_event_limit_blocks` păstrează blocajul per eveniment; API-ul îl expune și jobul îl jurnalizează numai când detaliile se schimbă. Următoarea execuție reîncearcă. Succesul, modificarea acceptată sau dezactivarea/ștergerea evenimentului elimină blocajul. Blocarea nu trimite notificări și nu creează plăți.
+
+### Configurare operațională
+
+```bash
+php artisan organization:subscription:show 12 --month=2026-09
+php artisan organization:subscription:set 12 --plan=plus
+php artisan organization:subscription:set 12 --members=200 --locations=4
+php artisan organization:subscription:set 12 --administrators=unlimited
+php artisan organization:subscription:set 12 --reset=members
+php artisan organization:subscription:set 12 --reset-all
+```
+
+Schimbarea pachetului păstrează excepțiile. `--reset` este repetabil; `--reset-all` elimină toate excepțiile. Nu combina setarea și resetarea aceleiași resurse. Valorile CLI sunt întregi între 0 și 2147483647 sau `unlimited`. `create:organisation --plan=plus` selectează pachetul la creare; implicit este Start. CLI-ul scrie `organization.subscription.updated` în `audit_logs`, cu valorile anterioare/noi. Modificările SQL directe nu produc automat audit sau validare de aplicație.
+
+Exemple SQL (într-o tranzacție, după blocarea organizației) pentru administrare directă:
+
+```sql
+START TRANSACTION;
+SELECT id FROM organizations WHERE id = 12 FOR UPDATE;
+UPDATE organizations SET plan_id = (SELECT id FROM organization_plans WHERE code = 'plus'), updated_at = CURRENT_TIMESTAMP WHERE id = 12;
+DELETE FROM organization_limit_overrides WHERE organization_id = 12 AND resource = 'members';
+INSERT INTO organization_limit_overrides (organization_id, resource, value, created_at, updated_at)
+VALUES (12, 'members', 200, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+COMMIT;
+```
+
+Pentru nelimitat folosește SQL `NULL`; pentru revenire la moștenire șterge doar rândul excepției. La modificarea unui pachet global, blochează în ordine crescătoare organizațiile care îl folosesc înainte de actualizarea pachetului. Folosește întregi nenegativi și nu șterge pachetul Start: este implicitul organizațiilor noi. Modificările SQL concurente trebuie să respecte aceleași blocări ca serviciul/CLI-ul.
+
+Migrarea `2026_09_11_000001_create_organization_subscriptions.php` creează și inițializează tabelele, atribuie Start și adaugă dreptul fără ștergerea datelor existente. La deploy rulează migrările înainte să servești noul cod și repornește workerii. Verifică organizațiile deja peste limite cu comanda `show` și ajustează pachetul/excepțiile după nevoie. Testele funcționale sunt în `OrganizationSubscriptionTest`; Swagger documentează endpoint-urile și contractul 409.
+
+## Organizație demo
+
+`php artisan demo:reset` creează sau resetează organizația demonstrativă. În configurația Docker actuală: `docker compose exec -T app-sifu php artisan demo:reset`. Comanda este exclusiv CLI, fără endpoint sau drept API nou; nu rulează automat în scheduler.
+
+- La prima rulare creează `Club Demo`, slug `demo`, cu planul `pro` și `organizations.is_demo = true`. Resetarea selectează exclusiv marcajul `is_demo`, nu numele sau slug-ul; refuză fără ștergeri un conflict cu o organizație nemarcată ori existența mai multor organizații demo.
+- Autentificare: `demo@club.com` / `password`, împreună cu ID-ul organizației demo în `POST /api/login`. ID-ul organizației și al administratorului se păstrează. Referința internă `organizations.demo_admin_user_id` permite restabilirea contului chiar dacă vizitatorii îi modifică e-mailul, parola, starea sau grupurile; dacă acel cont a fost șters, este recreat. Cele două câmpuri interne nu sunt mass-assignable prin API.
+- Administratorul este reactivat și readăugat în grupul admin la fiecare reset. Tokenurile bearer existente ale acestui cont se păstrează la reset; modificările normale de parolă prin API continuă să revoce sesiunile. Membrii suplimentari sunt șterși și recreați.
+- Setul demonstrativ conține 10 utilizatori inclusiv administratorul, 2 locații, 4 servicii, 6 assignment-uri activate, 8 plăți, 3 evenimente cu câte 3 ocurențe, 6 check-in-uri, 3 articole (`published`, `draft`, `expired`), 4 definiții de câmpuri personalizate cu 9 valori, 3 SMS-uri, 3 livrări de notificări, 3 campanii și 3 segmente. Fiecare secțiune cerută rămâne sub plafonul de 10; dashboard-ul și rapoartele se calculează din aceste date. Numele și valorile sunt fixe, datele calendaristice sunt relative la ziua resetării, iar ID-urile datelor recreate pot varia.
+- `DemoOrganizationResetService` șterge datele tenantului într-o tranzacție, inclusiv rândurile soft-deleted, istoricul de audit, pivoturile și datele suplimentare adăugate de vizitatori: documente, grade, exporturi, cereri GDPR, preferințe, dispozitive push, SMTP și limite personalizate. Fișierele private ale documentelor/exporturilor sunt șterse după commit, iar cache-ul definițiilor custom este invalidat. Grupurile sunt păstrate; grupurile de bază sunt asigurate cu nume `demo-{organization_id}-{admin|manager|staff}`, deoarece numele grupurilor sunt global unice. Planul revine la `pro`.
+- `DemoOrganizationSeeder` este apelat doar prin serviciul de reset. Activările folosesc `ServiceLifecycleService::activate(..., notify: false)`: validarea plății și auditul de activare rămân active, notificarea de activare este omisă explicit. Fluxurile obișnuite păstrează implicit `notify: true`. Mesajele demo sunt inserate direct în starea `sent`; campaniile sunt deja `sent`, astfel încât nu sunt preluate de scheduler. Utilizatorii demo nu au consimțăminte de notificare, numere de telefon sau tokenuri push. Seed-ul nu trimite mesaje, nu apelează provideri și nu creează joburi de livrare.
+- Un lock de cache serializează resetările concurente. Erorile din ștergere sau seed anulează tranzacția. Catalogul comun `ApplicationRights` este reutilizat de bootstrap-ul administratorului, `DatabaseSeeder` și demo pentru aceleași drepturi.
+
+Fișiere principale: `app/Console/Commands/ResetDemoOrganization.php`, `app/Users/Services/DemoOrganizationResetService.php`, `database/seeders/DemoOrganizationSeeder.php`, `database/seeders/ApplicationRights.php`, migrația `2026_09_11_000002_add_demo_identity_to_organizations.php`. Teste: `tests/Feature/DemoOrganizationResetTest.php`.

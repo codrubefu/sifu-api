@@ -19,9 +19,9 @@ class ServiceLifecycleService
 
     public function __construct(private readonly BusinessActivityLogger $activityLogger) {}
 
-    public function activate(ServiceUser $assignment, ?Payment $payment = null, ?CarbonInterface $at = null): ServiceUser
+    public function activate(ServiceUser $assignment, ?Payment $payment = null, ?CarbonInterface $at = null, bool $notify = true): ServiceUser
     {
-        return DB::transaction(function () use ($assignment, $payment, $at): ServiceUser {
+        return DB::transaction(function () use ($assignment, $payment, $at, $notify): ServiceUser {
             $assignment = $this->locked($assignment);
             $at ??= now();
 
@@ -66,18 +66,20 @@ class ServiceLifecycleService
 
             $assignmentId = (int) $assignment->id;
             $actorId = $payment?->admin_id;
-            DB::afterCommit(function () use ($assignmentId, $actorId, $oldValues): void {
+            DB::afterCommit(function () use ($assignmentId, $actorId, $oldValues, $notify): void {
                 $activatedAssignment = ServiceUser::query()->with(['service', 'user'])->find($assignmentId);
                 if ($activatedAssignment === null) {
                     return;
                 }
 
-                NotificationRequested::dispatch(
-                    $activatedAssignment->user,
-                    NotificationRequested::SERVICE_ACTIVATED,
-                    "service.activated:{$activatedAssignment->id}:{$activatedAssignment->activated_at?->timestamp}",
-                    ['service' => $activatedAssignment->service->name],
-                );
+                if ($notify) {
+                    NotificationRequested::dispatch(
+                        $activatedAssignment->user,
+                        NotificationRequested::SERVICE_ACTIVATED,
+                        "service.activated:{$activatedAssignment->id}:{$activatedAssignment->activated_at?->timestamp}",
+                        ['service' => $activatedAssignment->service->name],
+                    );
+                }
 
                 $this->activityLogger->record(
                     AuditLog::SERVICE_ACTIVATED,

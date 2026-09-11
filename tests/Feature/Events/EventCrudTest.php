@@ -9,6 +9,7 @@ use App\Users\Models\Location;
 use App\Users\Models\Organization;
 use App\Users\Models\Right;
 use App\Users\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -63,6 +64,7 @@ class EventCrudTest extends TestCase
 
     public function test_creating_a_monthly_event_generates_one_occurrence_per_month(): void
     {
+        Carbon::setTestNow('2026-11-01 10:00:00');
         [, $token] = $this->authenticatedUserWithRights(['events.manage']);
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
@@ -81,6 +83,8 @@ class EventCrudTest extends TestCase
         foreach (['2026-10-15', '2026-11-15', '2026-12-15'] as $date) {
             $this->assertDatabaseHas('event_occurrences', ['event_id' => $eventId, 'occurrence_date' => $date]);
         }
+
+        Carbon::setTestNow();
     }
 
     public function test_updating_recurrence_days_regenerates_open_future_occurrences_but_preserves_ones_with_participants_and_the_past(): void

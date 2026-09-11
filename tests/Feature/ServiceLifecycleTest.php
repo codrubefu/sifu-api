@@ -27,7 +27,24 @@ class ServiceLifecycleTest extends TestCase
         $this->assertSame('active', $assignment->status);
         $this->assertSame($payment->id, $assignment->activation_payment_id);
         $this->assertTrue($assignment->expires_at->equalTo(now()->addDays(30)));
-        $this->assertFalse(AuditLog::query()->where('model_type', ServiceUser::class)->where('model_id', $assignment->id)->where('event_type', AuditLog::SERVICE_ACTIVATED)->exists());
+        $this->assertTrue(AuditLog::query()->where('model_type', ServiceUser::class)->where('model_id', $assignment->id)->where('event_type', AuditLog::SERVICE_ACTIVATED)->exists());
+    }
+
+    public function test_activation_rollback_does_not_emit_notification_or_audit(): void
+    {
+        \Illuminate\Support\Facades\Event::fake([\App\Notifications\Events\NotificationRequested::class]);
+        $assignment = $this->assignment(['price' => 0]);
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($assignment): void {
+                app(ServiceLifecycleService::class)->activate($assignment);
+                throw new \RuntimeException('Rollback');
+            });
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Rollback', $exception->getMessage());
+        }
+        $this->assertNull($assignment->refresh()->activated_at);
+        $this->assertFalse(AuditLog::query()->where('event_type', AuditLog::SERVICE_ACTIVATED)->exists());
+        \Illuminate\Support\Facades\Event::assertNotDispatched(\App\Notifications\Events\NotificationRequested::class);
     }
 
     public function test_free_service_can_be_activated_without_payment(): void

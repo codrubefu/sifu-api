@@ -10,10 +10,13 @@ Backend Laravel API pentru un ERP de sală de arte marțiale / club sportiv, mul
 - `docs/functionality-explainer-agent.md` — ce face sistemul, endpoint cu endpoint, modul cu modul. Sursă unică de adevăr pentru comportamentul de business existent.
 - `docs/deployment-security.md` — cerințe de securitate pentru producție (HTTPS, proxy-uri, secrete, VPN).
 
-Există și doi subagenți dedicați în `.claude/agents/` care încarcă aceste fișiere automat:
+Există un subagent dedicat în `.claude/agents/sifu-api-dev.md` care încarcă aceste fișiere automat, atât pentru implementare/review cât și pentru explicarea comportamentului existent (un singur agent — cele două roluri foloseau aceeași sursă de adevăr, nu are sens să pornești două).
 
-- `project-rules` — pentru implementare/review de funcționalități.
-- `functionality-explainer` — pentru explicarea comportamentului existent.
+**Task trivial → nu porni subagent.** Dacă schimbarea e evidentă dintr-o privire și atinge un singur fișier (sau câteva strâns legate) — editează direct, fără să pornești `sifu-api-dev`. Un subagent pornește fără context și trebuie să recitească `docs/project-rules-agent.md` (450+ linii) de la zero; pentru un task de o linie, costul ăsta depășește task-ul însuși. Dacă ai dubii dacă task-ul e chiar trivial, nu e trivial — folosește subagentul.
+
+**Nu citi documentele mari în întregime pentru un task îngust.** `docs/functionality-explainer-agent.md` are 850+ linii; pentru "cum funcționează X" sau o schimbare pe un singur modul, caută (grep) modulul relevant și citește doar acea secțiune. Citește tot fișierul doar pentru un audit pe tot repo-ul.
+
+**Testare țintită.** Rulează întâi testele modulului schimbat (`php artisan test --filter=<Modul>` sau calea `tests/Feature/...` relevantă); suita completă doar pentru schimbări cross-cutting, migrații, sau auth/plăți, ori ca validare finală.
 
 **Regulă obligatorie**: orice endpoint, job, workflow, permisiune, tabelă sau comportament nou/schimbat trebuie reflectat în `docs/functionality-explainer-agent.md` înainte de a considera task-ul terminat.
 

@@ -62,7 +62,7 @@ class UpdateUserRequest extends FormRequest
             'notification_consents.*' => ['boolean'],
             'push_token' => ['nullable', 'string', 'max:2048'],
             'group_ids' => ['sometimes', 'array'],
-            'group_ids.*' => ['integer', 'exists:groups,id'],
+            'group_ids.*' => ['integer', OrganizationScopedExistsRule::make('groups', 'id', $this->user()?->organization_id)],
             'location_ids' => ['sometimes', 'array'],
             'location_ids.*' => ['integer', 'exists:locations,id'],
             'service_ids' => ['sometimes', 'array'],

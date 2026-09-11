@@ -2,6 +2,7 @@
 
 use App\Campaigns\Jobs\DispatchCampaign;
 use App\Campaigns\Models\Campaign;
+use App\Events\Jobs\ExtendRecurringEventOccurrences;
 use App\Notifications\Jobs\DispatchServiceLifecycleNotifications;
 use App\Articles\Jobs\TransitionArticlePublicationStatus;
 use App\Service\Jobs\SendExpiringServiceSms;
@@ -21,6 +22,12 @@ Schedule::call(function (): void {
 Schedule::job(new DispatchServiceLifecycleNotifications)
     ->name('services.lifecycle-notifications')
     ->dailyAt('08:00')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+Schedule::job(new ExtendRecurringEventOccurrences)
+    ->name('extend-recurring-event-occurrences')
+    ->dailyAt('03:00')
     ->withoutOverlapping()
     ->onOneServer();
 

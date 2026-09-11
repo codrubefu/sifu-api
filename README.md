@@ -70,3 +70,31 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## Organization subscriptions
+
+Organizations inherit Start (30 EUR/month), Plus (60 EUR/month), or Pro (100 EUR/month), with database-backed limits for active members, locations, monthly event occurrences and active administrators. Configure subscriptions only through CLI or SQL; API clients can read usage and check capacity.
+
+```bash
+php artisan organization:subscription:show 12
+php artisan organization:subscription:set 12 --plan=plus
+php artisan organization:subscription:set 12 --members=200 --administrators=unlimited
+php artisan organization:subscription:set 12 --reset=members
+php artisan create:organisation --plan=plus
+```
+
+Plan changes preserve overrides. `--reset-all` returns every limit to plan inheritance. SQL `NULL` means unlimited; an absent override means inheritance. Example for changing a plan while preserving overrides:
+
+```sql
+START TRANSACTION;
+SELECT id FROM organizations WHERE id = 12 FOR UPDATE;
+UPDATE organizations SET plan_id = (SELECT id FROM organization_plans WHERE code = 'plus') WHERE id = 12;
+DELETE FROM organization_limit_overrides WHERE organization_id = 12 AND resource = 'members';
+INSERT INTO organization_limit_overrides (organization_id, resource, value, created_at, updated_at)
+VALUES (12, 'members', 200, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+COMMIT;
+```
+
+Remove the override row to inherit the plan again. Direct SQL bypasses application audit; use the documented organization locking order for concurrent writes. Existing over-limit data is retained; only quota-increasing operations are blocked with HTTP 409. Pricing is informational, without subscription billing.
+
+Authenticated APIs (right: `organization_subscription.view`): `GET /api/organization/subscription?month=2026-09` and `POST /api/organization/subscription/check` with `{"resource":"members","quantity":1}`. Event checks also require `month`. Checks do not reserve capacity. See [functional documentation](docs/functionality-explainer-agent.md#abonamente-și-limite-pentru-organizații) for counting rules, SQL examples, error contracts, migration and recurrence-block handling. Regenerate Swagger with `php artisan l5-swagger:generate` after deployment.
