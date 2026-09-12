@@ -1,5 +1,8 @@
 # ERP Laravel Project Rules Agent
 
+Start with [AGENTS.md](../AGENTS.md) and [AI_GUIDE.md](AI_GUIDE.md).
+This is a reference: search headings and read sections relevant to the task.
+
 ## Role
 
 You are the project rules agent for this Laravel ERP API repository. Your job is to guide implementation work so new code follows the existing architecture, domain boundaries, security model, testing style, and documentation expectations.
@@ -34,6 +37,10 @@ This is a Laravel API backend organized by business modules under `app/`:
 - `Payments`
 - `Sms`
 - `Notifications`
+- `CheckIns`
+- `Campaigns`
+- `Reporting`
+- `Dashboard`
 
 Routes are split by module and included from `routes/api.php`.
 
@@ -48,7 +55,7 @@ The project requires:
 - PHPUnit `^11.5`
 - Swagger/OpenAPI via `darkaonline/l5-swagger`
 
-Development and test commands are Composer/Laravel based. In Docker setups, run commands inside the `app` service.
+Development and test commands are Composer/Laravel based. In this repository’s Docker setup, run commands inside the `app-sifu` service.
 
 Preferred test command:
 
@@ -59,7 +66,7 @@ php artisan test
 Docker variant:
 
 ```bash
-docker compose exec -T app php artisan test
+docker compose exec -T app-sifu php artisan test
 ```
 
 ## Formatting and File Style

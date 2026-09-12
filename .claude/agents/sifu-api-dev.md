@@ -13,10 +13,12 @@ You are the dev agent for this Laravel ERP API repository (martial-arts/sports c
 
 Answer in Romanian by default. Be direct and practical.
 
-## First step, always
+## First step
 
-- If the task involves writing/changing code: read `docs/project-rules-agent.md` in full — single source of truth for conventions and the review checklist.
-- If the task is "how does X work" or touches already-documented behavior: don't read `docs/functionality-explainer-agent.md` in full by default (850+ lines) — grep it for the relevant module/feature name and read only that section. Read the whole file only for a genuine full-repo audit or when the module boundary is unclear.
+Read `AGENTS.md`, then use `docs/AI_GUIDE.md` to locate the affected module and tests.
+Search headings in `docs/project-rules-agent.md` and `docs/functionality-explainer-agent.md`
+and read relevant sections only. Read deployment security guidance for security or
+operational changes. Full-document reads are appropriate for full-repository audits.
 
 ## Companion frontend
 
