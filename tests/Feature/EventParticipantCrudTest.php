@@ -33,18 +33,18 @@ class EventParticipantCrudTest extends TestCase
                 'status' => 'active',
                 'requires_payment' => true,
                 'payment_amount' => 49.99,
-                'payment_type' => 'card',
+                'payment_type' => 'EUR',
             ])
             ->assertCreated()
             ->assertJsonPath('data.requires_payment', true)
             ->assertJsonPath('data.payment_amount', '49.99')
-            ->assertJsonPath('data.payment_type', 'card');
+            ->assertJsonPath('data.payment_type', 'EUR');
 
         $this->assertDatabaseHas('events', [
             'title' => 'Eveniment platit',
             'requires_payment' => true,
             'payment_amount' => 49.99,
-            'payment_type' => 'card',
+            'payment_type' => 'EUR',
         ]);
     }
 
@@ -201,7 +201,7 @@ class EventParticipantCrudTest extends TestCase
         $event = Event::query()->create($this->eventData([
             'requires_payment' => true,
             'payment_amount' => 49.99,
-            'payment_type' => 'card',
+            'payment_type' => 'EUR',
         ]));
         $occurrence = $this->occurrence($event);
 
@@ -228,7 +228,7 @@ class EventParticipantCrudTest extends TestCase
         $event = Event::query()->create($this->eventData([
             'requires_payment' => true,
             'payment_amount' => 29.5,
-            'payment_type' => 'cash',
+            'payment_type' => 'RON',
         ]));
         $occurrence = $this->occurrence($event);
 

@@ -2,7 +2,6 @@
 
 namespace App\Events\Http\Requests;
 
-use App\Payments\Models\Payment;
 use App\Users\Support\OrganizationScopedExistsRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -58,7 +57,7 @@ class UpdateEventRequest extends FormRequest
             'required_service_id' => ['nullable', 'exists:services,id'],
             'requires_payment' => ['sometimes', 'boolean'],
             'payment_amount' => ['nullable', 'required_if:requires_payment,true', 'numeric', 'min:0'],
-            'payment_type' => ['nullable', 'required_if:requires_payment,true', 'string', Rule::in(array_values(Payment::PAYMENT_TYPES))],
+            'payment_type' => ['nullable', 'required_if:requires_payment,true', 'string', 'max:3'],
             'max_participants' => ['nullable', 'integer', 'min:1'],
             'status' => ['sometimes', 'required', Rule::in(['active', 'inactive', 'cancelled'])],
         ];
