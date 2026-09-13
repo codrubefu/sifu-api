@@ -10,7 +10,7 @@ class QueueNotificationDeliveries
 {
     public function handle(NotificationRequested $event): void
     {
-        foreach (['sms', 'mail', 'push'] as $channel) {
+        foreach ($event->channels as $channel) {
             if (! $event->user->consentsTo($channel)) {
                 continue;
             }

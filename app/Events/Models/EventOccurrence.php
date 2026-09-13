@@ -2,25 +2,24 @@
 
 namespace App\Events\Models;
 
-use App\Users\Models\Organization;
-use App\Users\Models\User;
 use App\Users\Models\Concerns\BelongsToAuthenticatedOrganization;
 use App\Users\Models\Concerns\LogsModelChanges;
 use App\Users\Models\Concerns\SetsOrganizationFromAuthenticatedUser;
+use App\Users\Models\Organization;
+use App\Users\Models\User;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-#[Fillable(['event_id','occurrence_date','start_datetime','end_datetime','status','organization_id'])]
+#[Fillable(['event_id', 'occurrence_date', 'start_datetime', 'end_datetime', 'status', 'organization_id'])]
 class EventOccurrence extends Model
 {
-    use LogsModelChanges;
     use BelongsToAuthenticatedOrganization;
-    use SetsOrganizationFromAuthenticatedUser;
-
     use HasFactory;
+    use LogsModelChanges;
+    use SetsOrganizationFromAuthenticatedUser;
 
     public function organization(): BelongsTo
     {
@@ -34,7 +33,7 @@ class EventOccurrence extends Model
 
     public function participants(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'event_occurrence_user')->withPivot(['id', 'status', 'registered_at', 'notes'])->withTimestamps();
+        return $this->belongsToMany(User::class, 'event_occurrence_user')->using(EventParticipant::class)->withPivot(['id', 'status', 'registered_at', 'notes'])->withTimestamps();
     }
 
     public function activeParticipants(): BelongsToMany
@@ -44,6 +43,6 @@ class EventOccurrence extends Model
 
     protected function casts(): array
     {
-        return ['occurrence_date' => 'date:Y-m-d','start_datetime' => 'datetime','end_datetime' => 'datetime'];
+        return ['occurrence_date' => 'date:Y-m-d', 'start_datetime' => 'datetime', 'end_datetime' => 'datetime'];
     }
 }

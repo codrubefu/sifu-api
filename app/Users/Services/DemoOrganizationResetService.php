@@ -93,7 +93,7 @@ class DemoOrganizationResetService
             'campaigns', 'articles', 'segments', 'payments', 'event_occurrences', 'events',
             'event_categories', 'services', 'custom_field_values', 'custom_fields', 'audit_logs',
             'user_documents', 'user_grades', 'grades', 'report_exports', 'gdpr_exports',
-            'gdpr_requests', 'consent_records', 'smtp_settings', 'organization_limit_overrides',
+            'gdpr_requests', 'consent_records', 'smtp_settings', 'email_templates', 'organization_limit_overrides',
             'organization_event_limit_blocks',
         ] as $table) {
             DB::table($table)->where('organization_id', $id)->delete();

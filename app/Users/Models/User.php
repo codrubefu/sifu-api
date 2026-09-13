@@ -2,31 +2,30 @@
 
 namespace App\Users\Models;
 
-use App\Users\Models\Organization;
-
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use App\Payments\Models\Payment;
 use App\Articles\Models\Article;
+use App\Events\Models\EventOccurrence;
+use App\Events\Models\EventParticipant;
+use App\Notifications\Models\NotificationPreference;
+use App\Notifications\Models\PushDevice;
+use App\Payments\Models\Payment;
 use App\Service\Models\Service;
 use App\Service\Models\ServiceUser;
 use App\Service\Services\ServiceLifecycleService;
-use App\Events\Models\EventOccurrence;
 use App\Users\Models\Concerns\BelongsToAuthenticatedOrganization;
 use App\Users\Models\Concerns\LogsModelChanges;
 use App\Users\Models\Concerns\SetsOrganizationFromAuthenticatedUser;
 use App\Users\Models\Scopes\LocationAccessScope;
 use App\Users\Services\OrganizationAccessService;
 use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use App\Notifications\Models\NotificationPreference;
-use App\Notifications\Models\PushDevice;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -35,10 +34,9 @@ use Illuminate\Notifications\Notifiable;
 #[UseFactory(UserFactory::class)]
 class User extends Authenticatable
 {
-    use LogsModelChanges;
     use BelongsToAuthenticatedOrganization;
+    use LogsModelChanges;
     use SetsOrganizationFromAuthenticatedUser;
-
 
     public function organization(): BelongsTo
     {
@@ -54,12 +52,13 @@ class User extends Authenticatable
     {
         return $this->hasMany(User::class, 'parent_user_id');
     }
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+
+    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new LocationAccessScope());
+        static::addGlobalScope(new LocationAccessScope);
         static::updated(function (User $user): void {
             if ($user->wasChanged('password') || ($user->wasChanged('active') && ! $user->active)) {
                 $user->accessTokens()->delete();
@@ -142,7 +141,7 @@ class User extends Authenticatable
 
     public function eventOccurrences(): BelongsToMany
     {
-        return $this->belongsToMany(EventOccurrence::class, 'event_occurrence_user')
+        return $this->belongsToMany(EventOccurrence::class, 'event_occurrence_user')->using(EventParticipant::class)
             ->withPivot(['status', 'registered_at', 'notes'])
             ->withTimestamps();
     }
@@ -210,8 +209,15 @@ class User extends Authenticatable
             };
     }
 
-    public function notificationPreferences(): HasMany { return $this->hasMany(NotificationPreference::class); }
-    public function pushDevices(): HasMany { return $this->hasMany(PushDevice::class); }
+    public function notificationPreferences(): HasMany
+    {
+        return $this->hasMany(NotificationPreference::class);
+    }
+
+    public function pushDevices(): HasMany
+    {
+        return $this->hasMany(PushDevice::class);
+    }
 
     /**
      * Get the attributes that should be cast.

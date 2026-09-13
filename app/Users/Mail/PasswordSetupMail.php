@@ -2,6 +2,7 @@
 
 namespace App\Users\Mail;
 
+use App\Notifications\Services\EmailTemplateService;
 use App\Users\Models\User;
 use App\Users\Services\OrganizationMailerService;
 use Illuminate\Bus\Queueable;
@@ -57,6 +58,11 @@ class PasswordSetupMail extends Mailable implements ShouldQueue
         $mail = $this
             ->subject($this->isNewAccount ? 'Bine ai venit! Setează-ți parola' : 'Resetare parolă')
             ->view('emails.users.password-setup');
+
+        if ($this->isNewAccount) {
+            $content = app(EmailTemplateService::class)->render($this->user, 'account.created', ['setup_url' => $this->link]);
+            $mail->subject($content['subject'])->view('emails.template', ['body' => $content['body']]);
+        }
 
         if ($this->user->organization) {
             app(OrganizationMailerService::class)->apply($mail, $this->user->organization);

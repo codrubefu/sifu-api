@@ -3,19 +3,26 @@
 namespace App\Notifications\Events;
 
 use App\Users\Models\User;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class NotificationRequested
+class NotificationRequested implements ShouldDispatchAfterCommit
 {
     use Dispatchable, SerializesModels;
 
     public const SERVICE_ACTIVATED = 'service.activated';
+
     public const SERVICE_EXPIRING = 'service.expiring';
+
     public const SERVICE_EXPIRED = 'service.expired';
+
     public const SCHEDULE_CHANGED = 'schedule.changed';
+
     public const URGENT_ANNOUNCEMENT = 'announcement.urgent';
+
     public const RESUMED = 'activity.resumed';
+
     public const OCCURRENCE_CANCELLED = 'occurrence.cancelled';
 
     public function __construct(
@@ -23,5 +30,6 @@ class NotificationRequested
         public string $type,
         public string $key,
         public array $payload = [],
+        public array $channels = ['sms', 'mail', 'push'],
     ) {}
 }

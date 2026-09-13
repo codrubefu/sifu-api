@@ -2,6 +2,7 @@
 
 namespace App\Payments\Services;
 
+use App\Notifications\Events\NotificationRequested;
 use App\Payments\Models\Payment;
 use App\Service\Models\ServiceUser;
 use App\Service\Services\ServiceLifecycleService;
@@ -113,6 +114,11 @@ class PaymentService
 
             $organization->forceFill(['receipt_number' => $nextNumber])->save();
             $payment->update(['receipt_number' => sprintf('%s%06d', $organization->receipt_code ?: 'CH', $nextNumber)]);
+        }
+
+        $subject = $this->subjectFor($payment);
+        if ($subject && (int) $subject->organization_id === (int) $payment->organization_id) {
+            NotificationRequested::dispatch($subject, 'payment.confirmed', 'payment.confirmed:'.$payment->id, ['payment_id' => $payment->id, 'amount' => $payment->amount, 'receipt_number' => $payment->receipt_number], ['mail']);
         }
 
         if ($payment->model_type !== Payment::MODEL_TYPE_SERVICE_USER) {

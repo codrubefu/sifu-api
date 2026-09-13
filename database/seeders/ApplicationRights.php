@@ -9,6 +9,8 @@ class ApplicationRights
     public static function definitions(): Collection
     {
         return collect([
+            ['name' => 'email_templates.view', 'label' => 'View email templates', 'description' => 'Read organization email templates.'],
+            ['name' => 'email_templates.manage', 'label' => 'Manage email templates', 'description' => 'Customize organization email templates.'],
             ['name' => 'organization_subscription.view', 'label' => 'View organization subscription', 'description' => 'Read organization limits and usage.'],
             ['name' => 'profile.view', 'label' => 'View own profile', 'description' => 'Access the authenticated user profile.'],
             ['name' => 'users.view', 'label' => 'View users', 'description' => 'Read user records.'],
