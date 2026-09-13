@@ -9,6 +9,7 @@ use App\Service\Services\ServiceLifecycleService;
 use App\Users\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class PaymentLifecycleTest extends TestCase
@@ -26,9 +27,11 @@ class PaymentLifecycleTest extends TestCase
         $this->assertDatabaseHas('service_user', [
             'id' => $assignmentId,
             'status' => 'active',
-            'start_date' => now()->toDateString(),
             'activation_payment_id' => $payment->id,
         ]);
+        $startDate = ServiceUser::query()->whereKey($assignmentId)->first()->start_date;
+        $this->assertNotNull($startDate);
+        $this->assertTrue(now()->isSameDay($startDate));
         $this->assertDatabaseHas('organizations', [
             'id' => $operator->organization_id,
             'receipt_number' => 1,
@@ -119,7 +122,7 @@ class PaymentLifecycleTest extends TestCase
             'confirmed_at' => now(),
         ]));
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
 
         app(ServiceLifecycleService::class)->activate(
             ServiceUser::query()->findOrFail($assignmentId),

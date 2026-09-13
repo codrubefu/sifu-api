@@ -48,9 +48,10 @@ class AttendanceReportingTest extends TestCase
     public function test_export_supports_csv_and_requires_export_right(): void
     {
         [, $viewToken] = $this->loginWith('reports.view');
+        [, $exportToken] = $this->loginWith('reports.export');
+
         $this->withToken($viewToken)->get('/api/reports/attendance/export?format=csv')->assertForbidden();
 
-        [, $exportToken] = $this->loginWith('reports.export');
         $this->withToken($exportToken)->get('/api/reports/attendance/export?format=csv')
             ->assertOk()->assertHeader('Content-Type', 'text/csv; charset=UTF-8')
             ->assertSee('sessions,attendances,absences,participation_rate', false);

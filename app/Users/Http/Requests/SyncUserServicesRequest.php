@@ -3,6 +3,7 @@
 namespace App\Users\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class SyncUserServicesRequest extends FormRequest
 {
@@ -14,7 +15,10 @@ class SyncUserServicesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'service_ids' => ['required_without:services', 'array'],
+            'service_ids' => [
+                Rule::requiredIf(fn (): bool => ! $this->has('services') && ! $this->has('service_ids')),
+                'array',
+            ],
             'service_ids.*' => ['integer', 'exists:services,id'],
             'services' => ['sometimes', 'array'],
             'services.*.id' => ['required_with:services', 'integer', 'exists:services,id'],

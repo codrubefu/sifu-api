@@ -48,7 +48,7 @@ class StoreEventRequest extends FormRequest
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'recurrence_type' => ['required', Rule::in(['once', 'weekly', 'monthly'])],
-            'recurrence_days' => ['required_if:recurrence_type,weekly', 'array'],
+            'recurrence_days' => ['nullable', 'required_if:recurrence_type,weekly', 'array'],
             'recurrence_days.*' => [Rule::in(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])],
             'monthly_day' => ['required_if:recurrence_type,monthly', 'nullable', 'integer', 'min:1', 'max:31'],
             'start_date' => ['required', 'date'],

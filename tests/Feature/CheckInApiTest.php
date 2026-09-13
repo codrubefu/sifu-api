@@ -119,23 +119,24 @@ class CheckInApiTest extends TestCase
     public function test_current_check_in_occurrences_include_all_scheduled_classes_for_today(): void
     {
         [, $token] = $this->authenticatedUserWithRights(['checkins.manage']);
-        $event = $this->event();
+        $morningEvent = $this->event(['title' => 'Clasa dimineata']);
+        $eveningEvent = $this->event(['title' => 'Clasa seara']);
         $early = EventOccurrence::query()->create([
-            'event_id' => $event->id,
+            'event_id' => $morningEvent->id,
             'occurrence_date' => now()->toDateString(),
             'start_datetime' => now()->setTime(7, 0),
             'end_datetime' => now()->setTime(8, 0),
             'status' => 'scheduled',
         ]);
         $late = EventOccurrence::query()->create([
-            'event_id' => $event->id,
+            'event_id' => $eveningEvent->id,
             'occurrence_date' => now()->toDateString(),
             'start_datetime' => now()->setTime(21, 0),
             'end_datetime' => now()->setTime(22, 0),
             'status' => 'scheduled',
         ]);
         $tomorrow = EventOccurrence::query()->create([
-            'event_id' => $event->id,
+            'event_id' => $morningEvent->id,
             'occurrence_date' => now()->addDay()->toDateString(),
             'start_datetime' => now()->addDay()->setTime(10, 0),
             'end_datetime' => now()->addDay()->setTime(11, 0),

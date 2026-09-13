@@ -19,7 +19,7 @@ class ReportFilterRequest extends FormRequest
             'service_type' => ['sometimes', 'string', 'max:100'],
             'service_id' => ['sometimes', 'integer'],
             'member_id' => ['sometimes', 'integer'],
-            'group_by' => ['sometimes', Rule::in(['day', 'month'])],
+            'group_by' => ['sometimes', Rule::in(['day', 'month', 'service', 'service_type'])],
             'segment_id' => ['sometimes', 'integer'],
         ];
     }

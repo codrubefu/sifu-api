@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Service\Models\Service;
 use App\Payments\Models\Payment;
+use App\Service\Models\Service;
 use App\Users\Models\Group;
 use App\Users\Models\Right;
 use App\Users\Models\User;
@@ -222,7 +222,7 @@ class ServiceCrudTest extends TestCase
 
     public function test_generate_invoice_assigns_invoice_number_once(): void
     {
-        [$admin, $token] = $this->authenticatedUserWithRights(['services.update']);
+        [$admin, $token] = $this->authenticatedUserWithRights(['services.update', 'services.view']);
         $member = User::factory()->create(['organization_id' => $admin->organization_id]);
         $service = Service::query()->create($this->serviceData([
             'name' => 'Manual invoice',

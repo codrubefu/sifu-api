@@ -26,7 +26,7 @@ class BearerTokenService
     public function findValidToken(string $plainTextToken): ?PersonalAccessToken
     {
         $accessToken = PersonalAccessToken::query()
-            ->with('user')
+            ->with(['user' => fn ($query) => $query->withoutGlobalScope('authenticated_organization')])
             ->where('token', $this->hash($plainTextToken))
             ->first();
 

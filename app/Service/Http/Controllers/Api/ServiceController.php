@@ -2,16 +2,16 @@
 
 namespace App\Service\Http\Controllers\Api;
 
+use App\Payments\Models\Payment;
 use App\Service\Http\Requests\StoreServiceRequest;
 use App\Service\Http\Requests\UpdateServiceRequest;
 use App\Service\Http\Resources\ServiceResource;
 use App\Service\Models\Service;
-use App\Payments\Models\Payment;
 use App\Service\Models\ServiceUser;
-use App\Service\Services\ServiceLifecycleService;
 use App\Service\Services\PaymentNoteService;
 use App\Service\Services\ServiceDocumentSequenceService;
 use App\Service\Services\ServiceInvoiceService;
+use App\Service\Services\ServiceLifecycleService;
 use App\Users\Http\Controllers\Controller;
 use App\Users\Services\OrganizationAccessService;
 use Illuminate\Http\JsonResponse;
@@ -28,9 +28,7 @@ class ServiceController extends Controller
         private readonly ServiceDocumentSequenceService $documentSequences,
         private readonly ServiceInvoiceService $invoices,
         private readonly OrganizationAccessService $organizationAccess,
-    )
-    {
-    }
+    ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -95,9 +93,13 @@ class ServiceController extends Controller
         return new ServiceResource($service->load('users')->loadCount('users'));
     }
 
-    public function destroy(Service $service): JsonResponse
+    public function destroy(Request $request, Service $service): JsonResponse
     {
-        if ($error = $this->organizationAccess->deleteBlockedByManyToManyResponse($service, ['users'])) {
+        if ($error = $this->organizationAccess->deleteBlockedByManyToManyResponse(
+            $service,
+            ['users'],
+            $request->user()?->organization_id,
+        )) {
             return response()->json($error, 422);
         }
 
@@ -160,7 +162,7 @@ class ServiceController extends Controller
     public function paymentNote(Request $request, ServiceUser $assignment): Response
     {
         $assignment->loadMissing(['service']);
-        abort_unless((int) $assignment->service->organization_id === (int) $request->user()->organization_id, 404);
+        abort_unless($assignment->service->organization_id === null || (int) $assignment->service->organization_id === (int) $request->user()->organization_id, 404);
 
         return $this->paymentNotes->download($assignment);
     }
@@ -168,18 +170,18 @@ class ServiceController extends Controller
     public function generateInvoice(Request $request, ServiceUser $assignment): JsonResponse
     {
         $assignment->loadMissing(['service']);
-        abort_unless((int) $assignment->service->organization_id === (int) $request->user()->organization_id, 404);
+        abort_unless($assignment->service->organization_id === null || (int) $assignment->service->organization_id === (int) $request->user()->organization_id, 404);
 
         $assignment = DB::transaction(function () use ($assignment): ServiceUser {
             $lockedAssignment = ServiceUser::query()
                 ->whereKey($assignment->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
-            $lockedAssignment->loadMissing(['service']);
+            $lockedAssignment->loadMissing(['service', 'user']);
 
             if (blank($lockedAssignment->invoice_number)) {
                 $lockedAssignment->forceFill([
-                    'invoice_number' => $this->documentSequences->nextInvoice((int) $lockedAssignment->service->organization_id),
+                    'invoice_number' => $this->documentSequences->nextInvoice((int) $lockedAssignment->user->organization_id),
                 ])->save();
             }
 
@@ -192,7 +194,7 @@ class ServiceController extends Controller
     public function invoice(Request $request, ServiceUser $assignment, string $format = 'pdf'): Response
     {
         $assignment->loadMissing(['service']);
-        abort_unless((int) $assignment->service->organization_id === (int) $request->user()->organization_id, 404);
+        abort_unless($assignment->service->organization_id === null || (int) $assignment->service->organization_id === (int) $request->user()->organization_id, 404);
         abort_if(blank($assignment->invoice_number), 404);
 
         return $format === 'xml'

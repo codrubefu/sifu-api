@@ -148,8 +148,8 @@ class BearerTokenAuthTest extends TestCase
         $this->withHeader('Authorization', "Bearer {$token}")
             ->patchJson('/api/me/password', [
                 'current_password' => 'password',
-                'password' => 'new-password',
-                'password_confirmation' => 'new-password',
+                'password' => 'NewPassword1',
+                'password_confirmation' => 'NewPassword1',
             ])
             ->assertOk()
             ->assertJsonPath('success', true)
@@ -164,7 +164,7 @@ class BearerTokenAuthTest extends TestCase
         $this->postJson('/api/login', [
             'email' => $user->email,
             'organization_id' => $organization->id,
-            'password' => 'new-password',
+            'password' => 'NewPassword1',
         ])->assertOk();
     }
 

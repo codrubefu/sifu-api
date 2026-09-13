@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Users\Models\AuditLog;
+use App\Users\Models\GdprRequest;
 use App\Users\Models\Group;
 use App\Users\Models\Right;
 use App\Users\Models\User;
@@ -33,7 +34,7 @@ class UserDocumentTest extends TestCase
                 'expires_at' => '2027-01-01',
             ]);
 
-        $response->assertOk()
+        $response->assertCreated()
             ->assertJsonPath('data.category', 'contract')
             ->assertJsonPath('data.title', 'Contract semnat');
 
@@ -62,7 +63,7 @@ class UserDocumentTest extends TestCase
                 'category' => 'contract',
                 'title' => 'Contract actualizat',
             ])
-            ->assertOk()
+            ->assertCreated()
             ->json('data.id');
 
         $this->assertDatabaseHas('user_documents', ['id' => $document->id, 'status' => UserDocument::STATUS_REPLACED]);
@@ -95,7 +96,7 @@ class UserDocumentTest extends TestCase
             'size' => 7,
             'checksum' => hash('sha256', 'content'),
         ]);
-        $request = \App\Users\Models\GdprRequest::query()->create([
+        $request = GdprRequest::query()->create([
             'organization_id' => $operator->organization_id,
             'user_id' => $member->id,
             'type' => 'erasure',

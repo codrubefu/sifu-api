@@ -51,7 +51,7 @@ class EventParticipationReportService
         $threshold = (float) ($filters['underutilized_below'] ?? 50);
         $groups = $query->orderBy('occurrence.occurrence_date')->orderBy('occurrence.start_datetime')->get()
             ->groupBy(fn ($row) => implode('|', [
-                $row->event_id, $row->category_id ?? 'none', $row->location ?? '', $row->occurrence_date,
+                $row->category_id ?? 'none', $row->location ?? '', $row->occurrence_date,
                 substr((string) $row->start_datetime, 11, 5), substr((string) $row->end_datetime, 11, 5),
             ]))
             ->map(function ($sessions) use ($threshold): array {

@@ -6,11 +6,12 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
+    libzip-dev \
     zip \
     unzip \
     libsqlite3-dev \
     default-mysql-client \
-    && docker-php-ext-install pdo_mysql pdo_sqlite mbstring exif pcntl bcmath gd \
+    && docker-php-ext-install pdo_mysql pdo_sqlite mbstring exif pcntl bcmath gd zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

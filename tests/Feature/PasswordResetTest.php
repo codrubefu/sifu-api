@@ -10,6 +10,7 @@ use App\Users\Models\User;
 use App\Users\Services\OrganizationMailerService;
 use App\Users\Services\PasswordSetupTokenService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
@@ -69,11 +70,11 @@ class PasswordResetTest extends TestCase
             'email' => $user->email,
             'organization_id' => $user->organization_id,
             'token' => $plainTextToken,
-            'password' => 'brand-new-password',
-            'password_confirmation' => 'brand-new-password',
+            'password' => 'BrandNewPassword1',
+            'password_confirmation' => 'BrandNewPassword1',
         ])->assertOk();
 
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('brand-new-password', $user->fresh()->password));
+        $this->assertTrue(Hash::check('BrandNewPassword1', $user->fresh()->password));
         $this->assertDatabaseMissing('personal_access_tokens', ['id' => $token->id]);
     }
 
@@ -99,16 +100,16 @@ class PasswordResetTest extends TestCase
             'email' => $user->email,
             'organization_id' => $user->organization_id,
             'token' => $plainTextToken,
-            'password' => 'brand-new-password',
-            'password_confirmation' => 'brand-new-password',
+            'password' => 'BrandNewPassword1',
+            'password_confirmation' => 'BrandNewPassword1',
         ])->assertOk();
 
         $this->postJson('/api/password/reset', [
             'email' => $user->email,
             'organization_id' => $user->organization_id,
             'token' => $plainTextToken,
-            'password' => 'another-password',
-            'password_confirmation' => 'another-password',
+            'password' => 'AnotherPassword1',
+            'password_confirmation' => 'AnotherPassword1',
         ])->assertStatus(422);
     }
 

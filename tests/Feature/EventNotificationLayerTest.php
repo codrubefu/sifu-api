@@ -34,7 +34,7 @@ class EventNotificationLayerTest extends TestCase
 
     public function test_a_failed_delivery_is_recorded_and_can_be_retried(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['notification_consents' => ['mail' => true]]);
         $delivery = NotificationDelivery::query()->create([
             'user_id' => $user->id, 'event_type' => NotificationRequested::URGENT_ANNOUNCEMENT,
             'event_key' => 'urgent:9', 'channel' => 'mail', 'template' => NotificationRequested::URGENT_ANNOUNCEMENT,
@@ -43,7 +43,10 @@ class EventNotificationLayerTest extends TestCase
         $sender = $this->mock(NotificationSender::class);
         $sender->shouldReceive('send')->once()->andThrow(new RuntimeException('temporary outage'));
 
-        try { (new SendNotificationDelivery($delivery->id))->handle($sender); } catch (RuntimeException) {}
+        try {
+            (new SendNotificationDelivery($delivery->id))->handle($sender);
+        } catch (RuntimeException) {
+        }
 
         $sender->shouldReceive('send')->once()->andReturn(['provider' => 'array', 'external_id' => 'mail-123']);
         (new SendNotificationDelivery($delivery->id))->handle($sender);

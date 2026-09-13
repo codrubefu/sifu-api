@@ -93,7 +93,7 @@ class FinancialReportingTest extends TestCase
 
     public function test_financial_documents_report_lists_and_downloads_documents_for_period(): void
     {
-        [$operator, $token] = $this->loginWith('reports.manage');
+        [$operator, $token] = $this->loginWith(['reports.view', 'reports.export']);
         $member = User::factory()->create(['organization_id' => $operator->organization_id]);
         $service = Service::query()->create([
             'organization_id' => $operator->organization_id,
@@ -217,14 +217,17 @@ class FinancialReportingTest extends TestCase
         ]);
     }
 
-    private function loginWith(string $rightName): array
+    private function loginWith(string|array $rightNames): array
     {
         $user = User::factory()->create(['password' => 'password']);
-        $right = Right::query()->create(['name' => $rightName, 'label' => $rightName]);
         $group = Group::query()->create(['name' => fake()->unique()->slug(), 'label' => 'Reports']);
-        $group->rights()->attach($right);
+        foreach ((array) $rightNames as $rightName) {
+            $right = Right::query()->create(['name' => $rightName, 'label' => $rightName]);
+            $group->rights()->attach($right);
+        }
         $user->groups()->attach($group);
         $token = $this->postJson('/api/login', ['email' => $user->email, 'organization_id' => $user->organization_id, 'password' => 'password'])->json('token');
+
         return [$user, $token];
     }
 }

@@ -2,27 +2,26 @@
 
 namespace App\Users\Http\Controllers\Api;
 
+use App\Events\Http\Resources\EventOccurrenceResource;
 use App\Notifications\Events\NotificationRequested;
 use App\Service\Models\Service;
 use App\Service\Services\ServiceDocumentSequenceService;
 use App\Users\Http\Controllers\Controller;
-use App\Users\Http\Requests\SyncUserServicesRequest;
 use App\Users\Http\Requests\StoreUserRequest;
+use App\Users\Http\Requests\SyncUserServicesRequest;
 use App\Users\Http\Requests\UpdateUserRequest;
 use App\Users\Http\Resources\ActivityResource;
-use App\Events\Http\Resources\EventOccurrenceResource;
 use App\Users\Http\Resources\UserResource;
+use App\Users\Mail\PasswordSetupMail;
 use App\Users\Models\AuditLog;
+use App\Users\Models\GdprRequest;
 use App\Users\Models\Scopes\LocationAccessScope;
 use App\Users\Models\User;
 use App\Users\Services\BusinessActivityLogger;
-use App\Users\Services\OrganizationAccessService;
-use App\Users\Models\GdprRequest;
 use App\Users\Services\GdprErasureService;
-use App\Users\Mail\PasswordSetupMail;
+use App\Users\Services\OrganizationAccessService;
 use App\Users\Services\PasswordSetupTokenService;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -37,9 +36,7 @@ class UserController extends Controller
         private readonly GdprErasureService $gdprErasureService,
         private readonly ServiceDocumentSequenceService $documentSequences,
         private readonly PasswordSetupTokenService $passwordSetupTokens,
-    )
-    {
-    }
+    ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -77,8 +74,7 @@ class UserController extends Controller
         ?bool $hasGroups = null,
         ?string $onlyRight = null,
         ?string $exceptOnlyRight = null,
-    ): AnonymousResourceCollection
-    {
+    ): AnonymousResourceCollection {
         $users = User::query()
             ->with($this->userRelationsForResponse($request->user()?->organization_id))
             ->when($hasGroups === true, fn ($query) => $query->has('groups'))
@@ -346,7 +342,7 @@ class UserController extends Controller
             }
 
             $pivotData = [
-                'bill_number' => $this->documentSequences->nextBill((int) $service->organization_id),
+                'bill_number' => $this->documentSequences->nextBill((int) $user->organization_id),
                 'status' => $this->serviceInitialStatus($service, $startDate),
                 'start_date' => $startDateValue,
                 'expires_at' => $expiresAt,
