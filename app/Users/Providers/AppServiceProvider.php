@@ -4,10 +4,13 @@ namespace App\Users\Providers;
 
 use App\Notifications\Events\NotificationRequested;
 use App\Notifications\Listeners\QueueNotificationDeliveries;
+use App\Users\Services\GoogleDriveDiskFactory;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
 
 use Illuminate\Support\ServiceProvider;
 
@@ -34,6 +37,8 @@ class AppServiceProvider extends ServiceProvider
             ->by($this->rateLimitKey($request, (string) ($request->header('X-Provider-Id') ?: $request->input('external_reference')))));
         RateLimiter::for('expensive', fn (Request $request) => Limit::perMinute(config('security.rate_limits.expensive_per_minute'))
             ->by($this->rateLimitKey($request, (string) ($request->user()?->getAuthIdentifier() ?: $request->input('email')))));
+
+        Storage::extend('google', fn (Application $app, array $config) => $app->make(GoogleDriveDiskFactory::class)->make($config));
     }
 
     private function rateLimitKey(Request $request, string $identity): string
