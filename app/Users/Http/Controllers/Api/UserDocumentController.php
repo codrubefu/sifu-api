@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class UserDocumentController extends Controller
 {
@@ -48,8 +49,10 @@ class UserDocumentController extends Controller
         $this->abortIfUserIsNotVisible($user, $request);
         $this->scanner->scan($request->file('file'));
 
-        $document = DB::transaction(function () use ($request, $user): UserDocument {
-            $document = $this->createDocument($request, $user);
+        [$disk, $path] = $this->storeFile($request, $user);
+
+        $document = $this->withStoredFile($disk, $path, fn (): UserDocument => DB::transaction(function () use ($request, $user, $disk, $path): UserDocument {
+            $document = $this->createDocument($request, $user, $disk, $path);
             $this->activityLogger->record(AuditLog::USER_DOCUMENT_UPLOADED, $user, $document, [], [
                 'document_id' => $document->id,
                 'category' => $document->category,
@@ -59,7 +62,7 @@ class UserDocumentController extends Controller
             ], $request->user());
 
             return $document;
-        });
+        }));
 
         return new UserDocumentResource($document->load(['uploader', 'location', 'versions']));
     }
@@ -70,8 +73,10 @@ class UserDocumentController extends Controller
         $this->abortIfDocumentIsNotVisible($document, $user, $request);
         $this->scanner->scan($request->file('file'));
 
-        $replacement = DB::transaction(function () use ($request, $user, $document): UserDocument {
-            $replacement = $this->createDocument($request, $user, $document);
+        [$disk, $path] = $this->storeFile($request, $user);
+
+        $replacement = $this->withStoredFile($disk, $path, fn (): UserDocument => DB::transaction(function () use ($request, $user, $document, $disk, $path): UserDocument {
+            $replacement = $this->createDocument($request, $user, $disk, $path, $document);
             $document->update(['status' => UserDocument::STATUS_REPLACED]);
             $this->activityLogger->record(AuditLog::USER_DOCUMENT_REPLACED, $user, $replacement, [
                 'document_id' => $document->id,
@@ -83,7 +88,7 @@ class UserDocumentController extends Controller
             ], $request->user());
 
             return $replacement;
-        });
+        }));
 
         return new UserDocumentResource($replacement->load(['uploader', 'location', 'versions']));
     }
@@ -138,15 +143,59 @@ class UserDocumentController extends Controller
         return response()->json(status: 204);
     }
 
-    private function createDocument(Request $request, User $user, ?UserDocument $replaces = null): UserDocument
+    /**
+     * Stores the uploaded file on the configured documents disk before any database write,
+     * so a failing remote disk (e.g. Google Drive) never leaves a row without a file.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function storeFile(Request $request, User $user): array
+    {
+        $file = $request->file('file');
+        $disk = (string) config('filesystems.user_documents_disk', 'local');
+        $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
+
+        try {
+            $path = $file->storeAs(
+                "user-documents/{$user->organization_id}/{$user->id}",
+                Str::uuid()->toString().'.'.$extension,
+                $disk,
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+            $path = false;
+        }
+
+        abort_if($path === false, 503, 'Documentul nu a putut fi salvat. Încearcă din nou.');
+
+        return [$disk, $path];
+    }
+
+    /**
+     * @template T
+     *
+     * @param  callable(): T  $callback
+     * @return T
+     */
+    private function withStoredFile(string $disk, string $path, callable $callback): mixed
+    {
+        try {
+            return $callback();
+        } catch (Throwable $exception) {
+            try {
+                Storage::disk($disk)->delete($path);
+            } catch (Throwable) {
+                // Keep the original failure; an orphaned file is less important.
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function createDocument(Request $request, User $user, string $disk, string $path, ?UserDocument $replaces = null): UserDocument
     {
         $file = $request->file('file');
         $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
-        $path = $file->storeAs(
-            "user-documents/{$user->organization_id}/{$user->id}",
-            Str::uuid()->toString().'.'.$extension,
-            'local',
-        );
 
         return UserDocument::query()->create([
             'organization_id' => $user->organization_id,
@@ -158,7 +207,7 @@ class UserDocumentController extends Controller
             'title' => $request->input('title', $replaces?->title ?? $file->getClientOriginalName()),
             'description' => $request->input('description', $replaces?->description),
             'expires_at' => $request->input('expires_at', $replaces?->expires_at?->toDateString()),
-            'disk' => 'local',
+            'disk' => $disk,
             'path' => $path,
             'original_name' => $file->getClientOriginalName(),
             'mime_type' => $file->getMimeType() ?? 'application/octet-stream',

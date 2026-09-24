@@ -24,7 +24,7 @@ return [
     | may even configure multiple disks for the same driver. Examples for
     | most supported storage drivers are configured here for reference.
     |
-    | Supported drivers: "local", "ftp", "sftp", "s3"
+    | Supported drivers: "local", "ftp", "sftp", "s3", "google"
     |
     */
 
@@ -60,7 +60,37 @@ return [
             'report' => false,
         ],
 
+        // Google Drive (masbug/flysystem-google-drive-ext). Authenticate either with an
+        // OAuth refresh token (personal Gmail account) or with a service account JSON
+        // file, which requires a Shared Drive or a folder shared with the account.
+        'google' => [
+            'driver' => 'google',
+            'client_id' => env('GOOGLE_DRIVE_CLIENT_ID'),
+            'client_secret' => env('GOOGLE_DRIVE_CLIENT_SECRET'),
+            'refresh_token' => env('GOOGLE_DRIVE_REFRESH_TOKEN'),
+            'service_account_json' => env('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON'),
+            'folder' => env('GOOGLE_DRIVE_FOLDER', 'sifu'),
+            'shared_folder_id' => env('GOOGLE_DRIVE_SHARED_FOLDER_ID'),
+            'team_drive_id' => env('GOOGLE_DRIVE_TEAM_DRIVE_ID'),
+            'application_name' => env('APP_NAME', 'Sifu'),
+            'throw' => true,
+            'report' => false,
+        ],
+
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | User Documents Disk
+    |--------------------------------------------------------------------------
+    |
+    | Disk used for new member document uploads. Existing documents keep the
+    | disk stored on their row, so switching this value does not break
+    | downloads or deletions of files uploaded earlier.
+    |
+    */
+
+    'user_documents_disk' => env('USER_DOCUMENTS_DISK', 'local'),
 
     /*
     |--------------------------------------------------------------------------
