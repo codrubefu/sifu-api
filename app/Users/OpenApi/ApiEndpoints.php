@@ -294,6 +294,14 @@ class ApiEndpoints
                 schema: new OA\Schema(type: 'string'),
                 example: 'USR00000000000000000000000000001',
             ),
+            new OA\Parameter(ref: '#/components/parameters/UserListActive'),
+            new OA\Parameter(ref: '#/components/parameters/UserListHasActiveService'),
+            new OA\Parameter(ref: '#/components/parameters/UserListServiceId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListServiceExpiringDays'),
+            new OA\Parameter(ref: '#/components/parameters/UserListGradeId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListLocationId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListDocumentExpired'),
+            new OA\Parameter(ref: '#/components/parameters/UserListSort'),
             new OA\QueryParameter(name: 'per_page', required: false, schema: new OA\Schema(type: 'integer'), example: 15),
             new OA\QueryParameter(name: 'page', required: false, schema: new OA\Schema(type: 'integer'), example: 1),
         ],
@@ -313,6 +321,7 @@ class ApiEndpoints
                 ),
             ),
             new OA\Response(response: 403, description: 'Missing users.view right.'),
+            new OA\Response(response: 422, description: 'Invalid filter or sort value (including service_id/grade_id/location_id outside the organization).'),
         ],
     )]
     public function administratorsIndex(): void
@@ -332,6 +341,14 @@ class ApiEndpoints
                 schema: new OA\Schema(type: 'string'),
                 example: 'USR00000000000000000000000000001',
             ),
+            new OA\Parameter(ref: '#/components/parameters/UserListActive'),
+            new OA\Parameter(ref: '#/components/parameters/UserListHasActiveService'),
+            new OA\Parameter(ref: '#/components/parameters/UserListServiceId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListServiceExpiringDays'),
+            new OA\Parameter(ref: '#/components/parameters/UserListGradeId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListLocationId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListDocumentExpired'),
+            new OA\Parameter(ref: '#/components/parameters/UserListSort'),
             new OA\QueryParameter(name: 'per_page', required: false, schema: new OA\Schema(type: 'integer'), example: 15),
             new OA\QueryParameter(name: 'page', required: false, schema: new OA\Schema(type: 'integer'), example: 1),
         ],
@@ -351,6 +368,7 @@ class ApiEndpoints
                 ),
             ),
             new OA\Response(response: 403, description: 'Missing users.view right.'),
+            new OA\Response(response: 422, description: 'Invalid filter or sort value (including service_id/grade_id/location_id outside the organization).'),
         ],
     )]
     public function clientsIndex(): void
@@ -1057,6 +1075,14 @@ class ApiEndpoints
                 schema: new OA\Schema(type: 'string'),
                 example: 'USR00000000000000000000000000001',
             ),
+            new OA\Parameter(ref: '#/components/parameters/UserListActive'),
+            new OA\Parameter(ref: '#/components/parameters/UserListHasActiveService'),
+            new OA\Parameter(ref: '#/components/parameters/UserListServiceId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListServiceExpiringDays'),
+            new OA\Parameter(ref: '#/components/parameters/UserListGradeId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListLocationId'),
+            new OA\Parameter(ref: '#/components/parameters/UserListDocumentExpired'),
+            new OA\Parameter(ref: '#/components/parameters/UserListSort'),
             new OA\QueryParameter(name: 'per_page', required: false, schema: new OA\Schema(type: 'integer'), example: 15),
         ],
         responses: [
@@ -1075,6 +1101,7 @@ class ApiEndpoints
                 ),
             ),
             new OA\Response(response: 403, description: 'Missing users.view right.'),
+            new OA\Response(response: 422, description: 'Invalid filter or sort value (including service_id/grade_id/location_id outside the organization).'),
         ],
     )]
     public function usersIndex(): void

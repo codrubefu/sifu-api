@@ -58,6 +58,8 @@ Route::middleware(['auth.bearer', 'organization.limits'])->group(function (): vo
 
     Route::get('/check-ins/occurrences/current', [CheckInController::class, 'currentOccurrences'])
         ->middleware('right:event_participants.manage,checkins.manage');
+    Route::get('/check-ins/recent', [CheckInController::class, 'recent'])
+        ->middleware('right:event_participants.manage,checkins.manage');
     Route::post('/check-ins/search', [CheckInController::class, 'search'])
         ->middleware('right:event_participants.manage,checkins.manage');
     Route::post('/check-ins/confirm', [CheckInController::class, 'confirm'])

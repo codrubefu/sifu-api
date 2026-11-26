@@ -19,31 +19,82 @@ class CheckInService
         private readonly BusinessActivityLogger $activityLogger,
     ) {}
 
-    public function search(string $query, ?EventOccurrence $occurrence = null): array
-    {
-        $member = User::query()
-            ->with(['activeServices', 'services'])
-            ->where(function ($builder) use ($query): void {
-                $builder->where('user_code', $query)
-                    ->orWhere('phone', $query)
-                    ->orWhere('email', $query)
-                    ->orWhere('user_code', 'like', "%{$query}%")
-                    ->orWhere('phone', 'like', "%{$query}%")
-                    ->orWhere('email', 'like', "%{$query}%");
-            })
-            ->orderByRaw('case when user_code = ? or phone = ? or email = ? then 0 else 1 end', [$query, $query, $query])
-            ->first();
+    public const MAX_CANDIDATES = 20;
 
-        if (! $member) {
-            return [
-                'member_found' => false,
-                'verdict' => 'not_found',
-                'access_allowed' => false,
-                'reason' => 'member_not_found',
-            ];
+    public function search(string $query, ?EventOccurrence $occurrence = null, ?int $userId = null): array
+    {
+        if ($userId !== null) {
+            $member = User::query()->with(['activeServices', 'services'])->find($userId);
+
+            return $member ? $this->verdict($member, $occurrence) : $this->notFound();
         }
 
-        return $this->verdict($member, $occurrence);
+        $query = trim($query);
+
+        // Exact identifier (card scan, phone, email) wins immediately.
+        $exact = User::query()
+            ->with(['activeServices', 'services'])
+            ->where(fn ($builder) => $builder->where('user_code', $query)->orWhere('phone', $query)->orWhere('email', $query))
+            ->first();
+
+        if ($exact) {
+            return $this->verdict($exact, $occurrence);
+        }
+
+        $terms = array_values(array_filter(preg_split('/\s+/', $query) ?: [], fn (string $term): bool => $term !== ''));
+
+        $matches = User::query()
+            ->where(function ($builder) use ($terms): void {
+                foreach ($terms as $term) {
+                    $like = "%{$term}%";
+                    $builder->where(fn ($inner) => $inner
+                        ->where('first_name', 'like', $like)
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhere('user_code', 'like', $like)
+                        ->orWhere('phone', 'like', $like)
+                        ->orWhere('email', 'like', $like));
+                }
+            })
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('id')
+            ->limit(self::MAX_CANDIDATES + 1)
+            ->get();
+
+        if ($matches->isEmpty()) {
+            return $this->notFound();
+        }
+
+        if ($matches->count() === 1) {
+            return $this->verdict($matches->first(), $occurrence);
+        }
+
+        return [
+            'member_found' => false,
+            'verdict' => 'multiple_matches',
+            'access_allowed' => false,
+            'reason' => 'multiple_matches',
+            'candidates' => $matches->take(self::MAX_CANDIDATES)->map(fn (User $user): array => [
+                'id' => $user->id,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'user_code' => $user->user_code,
+                'phone' => $user->phone,
+                'email' => $user->email,
+                'active' => (bool) $user->active,
+            ])->values()->all(),
+            'candidates_truncated' => $matches->count() > self::MAX_CANDIDATES,
+        ];
+    }
+
+    private function notFound(): array
+    {
+        return [
+            'member_found' => false,
+            'verdict' => 'not_found',
+            'access_allowed' => false,
+            'reason' => 'member_not_found',
+        ];
     }
 
     public function confirm(User $member, EventOccurrence $occurrence, User $actor, bool $allowOverride = false, ?string $notes = null): array
@@ -71,7 +122,7 @@ class CheckInService
         }
 
         $participant = DB::transaction(function () use ($member, $occurrence, $notes, $shouldConsumeAccess): User {
-            $lockedOccurrence = EventOccurrence::query()->with('event.requiredService')->lockForUpdate()->findOrFail($occurrence->id);
+            $lockedOccurrence = EventOccurrence::query()->with('event.serviceRequirements.service')->lockForUpdate()->findOrFail($occurrence->id);
             if ($this->participants->isAlreadyRegistered($lockedOccurrence, $member->id)) {
                 throw ValidationException::withMessages(['user_id' => 'already_present']);
             }
@@ -84,6 +135,7 @@ class CheckInService
                 'status' => 'attended',
                 'registered_at' => now(),
                 'notes' => $notes,
+                'access_override' => ! $shouldConsumeAccess,
             ]);
 
             return $lockedOccurrence->participants()->whereKey($member->id)->firstOrFail();
@@ -102,13 +154,57 @@ class CheckInService
     public function currentOccurrences(User $actor): array
     {
         return EventOccurrence::query()
-            ->with(['event.category', 'event.requiredService'])
+            ->with(['event.category', 'event.serviceRequirements.service'])
             ->withCount('participants')
             ->whereDate('occurrence_date', now()->toDateString())
             ->where('status', 'scheduled')
             ->orderBy('start_datetime')
             ->get()
             ->all();
+    }
+
+    public const MAX_RECENT = 10;
+
+    /**
+     * Latest attended check-ins visible to the actor (organization + location scopes on User/EventOccurrence).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function recent(int $limit = self::MAX_RECENT): array
+    {
+        $limit = max(1, min($limit, self::MAX_RECENT));
+
+        $rows = User::query()
+            ->join('event_occurrence_user as check_in', 'check_in.user_id', '=', 'users.id')
+            ->whereIn('check_in.event_occurrence_id', EventOccurrence::query()->select('id'))
+            ->where('check_in.status', 'attended')
+            ->orderByDesc('check_in.registered_at')
+            ->orderByDesc('check_in.id')
+            ->limit($limit)
+            ->get([
+                'users.id',
+                'users.first_name',
+                'users.last_name',
+                'users.user_code',
+                'check_in.event_occurrence_id',
+                'check_in.registered_at as checked_in_at',
+            ]);
+
+        $titles = EventOccurrence::query()
+            ->with('event:id,title')
+            ->whereIn('id', $rows->pluck('event_occurrence_id')->unique()->all())
+            ->get()
+            ->mapWithKeys(fn (EventOccurrence $occurrence): array => [$occurrence->id => $occurrence->event?->title]);
+
+        return $rows->map(fn (User $row): array => [
+            'user_id' => $row->id,
+            'first_name' => $row->first_name,
+            'last_name' => $row->last_name,
+            'user_code' => $row->user_code,
+            'occurrence_id' => (int) $row->event_occurrence_id,
+            'event_title' => $titles[$row->event_occurrence_id] ?? null,
+            'registered_at' => $row->checked_in_at,
+        ])->values()->all();
     }
 
     private function verdict(User $member, ?EventOccurrence $occurrence): array
@@ -153,7 +249,7 @@ class CheckInService
             return $result;
         }
 
-        $occurrence->loadMissing('event.requiredService');
+        $occurrence->loadMissing('event.serviceRequirements.service');
         $result['occurrence'] = $occurrence;
 
         if ($occurrence->participants()->whereKey($member->id)->wherePivot('status', 'attended')->exists()) {
@@ -165,7 +261,12 @@ class CheckInService
         }
 
         if (! $this->participants->isEligible($member, $occurrence)) {
-            return array_merge($result, ['verdict' => 'refused', 'access_allowed' => false, 'reason' => 'missing_required_service']);
+            return array_merge($result, [
+                'verdict' => 'refused',
+                'access_allowed' => false,
+                'reason' => 'missing_required_service',
+                'missing_service_groups' => $this->participants->missingServiceGroups($member, $occurrence),
+            ]);
         }
 
         if (! $this->participants->hasAvailableCapacity($occurrence)) {

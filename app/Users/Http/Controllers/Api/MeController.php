@@ -103,7 +103,7 @@ class MeController extends Controller
     {
         $occurrences = $this->resolveSubject($request)
             ->eventOccurrences()
-            ->with('event')
+            ->with('event.serviceRequirements.service')
             ->orderByDesc('start_datetime')
             ->paginate($request->integer('per_page', 15));
 

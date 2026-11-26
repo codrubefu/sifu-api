@@ -254,6 +254,7 @@ Rules:
 Important current schema notes:
 
 - `services` no longer has `billing_interval` or `trial_days`.
+- `events` no longer has `required_service_id`; required services are OR/AND groups in `event_service_requirements` (`group_index`), read via `Event::serviceGroups()` and consumed via `ServiceLifecycleService::consumeEventAccess()` (one access per group).
 - article delivery/view receipts are stored in `article_user_receipts`.
 - notifications use `notification_deliveries` and `notification_attempts`.
 - audit logs store `organization_id`, `subject_user_id`, `event_type`, model info, changed values, and actor.

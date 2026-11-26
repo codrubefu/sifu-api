@@ -19,6 +19,8 @@ class EventParticipantResource extends JsonResource
             'status' => $this->pivot?->status,
             'registered_at' => $this->pivot?->registered_at,
             'notes' => $this->pivot?->notes,
+            // True when admitted past the access checks (check-in override or forced add) without consuming an access.
+            'access_override' => (bool) ($this->pivot?->access_override ?? false),
             'created_at' => $this->pivot?->created_at,
             'updated_at' => $this->pivot?->updated_at,
         ];

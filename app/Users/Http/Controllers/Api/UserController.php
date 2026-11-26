@@ -6,7 +6,9 @@ use App\Events\Http\Resources\EventOccurrenceResource;
 use App\Notifications\Events\NotificationRequested;
 use App\Service\Models\Service;
 use App\Service\Services\ServiceDocumentSequenceService;
+use App\Service\Services\ServiceLifecycleService;
 use App\Users\Http\Controllers\Controller;
+use App\Users\Http\Requests\ListUsersRequest;
 use App\Users\Http\Requests\StoreUserRequest;
 use App\Users\Http\Requests\SyncUserServicesRequest;
 use App\Users\Http\Requests\UpdateUserRequest;
@@ -17,6 +19,7 @@ use App\Users\Models\AuditLog;
 use App\Users\Models\GdprRequest;
 use App\Users\Models\Scopes\LocationAccessScope;
 use App\Users\Models\User;
+use App\Users\Models\UserDocument;
 use App\Users\Services\BusinessActivityLogger;
 use App\Users\Services\GdprErasureService;
 use App\Users\Services\OrganizationAccessService;
@@ -38,17 +41,17 @@ class UserController extends Controller
         private readonly PasswordSetupTokenService $passwordSetupTokens,
     ) {}
 
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(ListUsersRequest $request): AnonymousResourceCollection
     {
         return $this->userList($request);
     }
 
-    public function administrators(Request $request): AnonymousResourceCollection
+    public function administrators(ListUsersRequest $request): AnonymousResourceCollection
     {
         return $this->userList($request, hasGroups: true, exceptOnlyRight: 'profile.view');
     }
 
-    public function clients(Request $request): AnonymousResourceCollection
+    public function clients(ListUsersRequest $request): AnonymousResourceCollection
     {
         return $this->userList($request, onlyRight: 'profile.view');
     }
@@ -70,7 +73,7 @@ class UserController extends Controller
     }
 
     private function userList(
-        Request $request,
+        ListUsersRequest $request,
         ?bool $hasGroups = null,
         ?string $onlyRight = null,
         ?string $exceptOnlyRight = null,
@@ -105,11 +108,85 @@ class UserController extends Controller
                         ->orWhere('user_code', 'like', "%{$search}%");
                 });
             })
-            ->orderBy('last_name', 'asc')
-            ->orderBy('first_name', 'asc')
+            ->tap(fn ($query) => $this->applyListFilters($query, $request))
+            ->tap(fn ($query) => $this->applyListSort($query, $request->validated('sort', 'name')))
             ->paginate($request->integer('per_page', 15));
 
         return UserResource::collection($users);
+    }
+
+    /**
+     * Optional list filters (all combined with AND). "Active service" uses the same
+     * definition as User::activeServices(), see ServiceLifecycleService::constrainToEffectivelyActive().
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<User>  $query
+     */
+    private function applyListFilters($query, ListUsersRequest $request): void
+    {
+        $filters = $request->validated();
+        $lifecycle = app(ServiceLifecycleService::class);
+        $now = now();
+        $activeService = fn ($query) => $lifecycle->constrainToEffectivelyActive($query, $now);
+
+        if (array_key_exists('active', $filters)) {
+            $query->where('users.active', (bool) (int) $filters['active']);
+        }
+
+        if (array_key_exists('has_active_service', $filters)) {
+            (bool) (int) $filters['has_active_service']
+                ? $query->whereHas('services', $activeService)
+                : $query->whereDoesntHave('services', $activeService);
+        }
+
+        if (array_key_exists('service_id', $filters)) {
+            $serviceId = (int) $filters['service_id'];
+            $query->whereHas('services', function ($query) use ($activeService, $serviceId): void {
+                $query->where('services.id', $serviceId);
+                $activeService($query);
+            });
+        }
+
+        if (array_key_exists('service_expiring_days', $filters)) {
+            $until = $now->copy()->addDays((int) $filters['service_expiring_days']);
+            $query->whereHas('services', function ($query) use ($activeService, $until): void {
+                $query->whereNotNull('service_user.expires_at')
+                    ->where('service_user.expires_at', '<=', $until);
+                $activeService($query);
+            });
+        }
+
+        if (array_key_exists('grade_id', $filters)) {
+            $gradeId = (int) $filters['grade_id'];
+            $query->whereHas('activeUserGrade', fn ($query) => $query->where('user_grades.grade_id', $gradeId));
+        }
+
+        if (array_key_exists('location_id', $filters)) {
+            $locationId = (int) $filters['location_id'];
+            $query->whereHas('locations', fn ($query) => $query->where('locations.id', $locationId));
+        }
+
+        if (array_key_exists('document_expired', $filters)) {
+            $expiredDocument = fn ($query) => $query
+                ->where('user_documents.status', UserDocument::STATUS_ACTIVE)
+                ->whereNotNull('user_documents.expires_at')
+                ->whereDate('user_documents.expires_at', '<', $now->toDateString());
+
+            (bool) (int) $filters['document_expired']
+                ? $query->whereHas('documents', $expiredDocument)
+                : $query->whereDoesntHave('documents', $expiredDocument);
+        }
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<User>  $query
+     */
+    private function applyListSort($query, string $sort): void
+    {
+        match ($sort) {
+            'created_at' => $query->orderBy('users.created_at')->orderBy('users.id'),
+            '-created_at' => $query->orderByDesc('users.created_at')->orderByDesc('users.id'),
+            default => $query->orderBy('users.last_name')->orderBy('users.first_name'),
+        };
     }
 
     public function store(StoreUserRequest $request): JsonResponse
@@ -165,7 +242,7 @@ class UserController extends Controller
 
         return EventOccurrenceResource::collection(
             $user->eventOccurrences()
-                ->with(['event.category', 'event.requiredService'])
+                ->with(['event.category', 'event.serviceRequirements.service'])
                 ->orderByDesc('start_datetime')
                 ->paginate($request->integer('per_page', 15))
         );

@@ -45,7 +45,13 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'start_date', type: 'string', format: 'date', example: '2026-06-01'),
         new OA\Property(property: 'end_date', type: 'string', format: 'date', nullable: true, example: '2026-12-31'),
         new OA\Property(property: 'requires_active_service', type: 'boolean', example: true),
-        new OA\Property(property: 'required_service_id', type: 'integer', nullable: true, example: 2),
+        new OA\Property(
+            property: 'service_groups',
+            type: 'array',
+            description: 'Required service groups, ordered by group index. Inside a group any one active service is enough (OR); every group must be satisfied (AND). Empty when requires_active_service is false, or when any active service is accepted. Present when the relation is loaded (event list/detail, occurrences, check-in, user events).',
+            items: new OA\Items(type: 'array', items: new OA\Items(ref: '#/components/schemas/EventServiceSummary')),
+            example: [[['id' => 1, 'name' => 'Taxa lunara', 'type' => 'membership', 'price' => '150.00', 'currency' => 'RON', 'max_accesses' => null, 'is_active' => true], ['id' => 2, 'name' => 'Taxa anuala', 'type' => 'membership', 'price' => '1500.00', 'currency' => 'RON', 'max_accesses' => null, 'is_active' => true]], [['id' => 5, 'name' => 'Taxa FRAM', 'type' => 'membership', 'price' => '100.00', 'currency' => 'RON', 'max_accesses' => null, 'is_active' => true]]],
+        ),
         new OA\Property(property: 'requires_payment', type: 'boolean', example: true, description: 'When true, the event requires a payment before participation.'),
         new OA\Property(property: 'payment_amount', type: 'string', nullable: true, example: '49.99', description: 'Required when requires_payment is true.'),
         new OA\Property(property: 'payment_type', type: 'string', nullable: true, example: 'EUR', description: 'Currency code for payment_amount (e.g. EUR, RON). Required when requires_payment is true.'),
@@ -56,6 +62,31 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'created_at', type: 'string', format: 'date-time', nullable: true),
         new OA\Property(property: 'updated_at', type: 'string', format: 'date-time', nullable: true),
         new OA\Property(property: 'deleted_at', type: 'string', format: 'date-time', nullable: true),
+    ],
+    type: 'object',
+)]
+#[OA\Schema(
+    schema: 'EventServiceSummary',
+    properties: [
+        new OA\Property(property: 'id', type: 'integer', example: 5),
+        new OA\Property(property: 'name', type: 'string', example: 'Taxa FRAM'),
+        new OA\Property(property: 'type', type: 'string', nullable: true, example: 'membership'),
+        new OA\Property(property: 'price', type: 'string', nullable: true, example: '100.00'),
+        new OA\Property(property: 'currency', type: 'string', nullable: true, example: 'RON'),
+        new OA\Property(property: 'max_accesses', type: 'integer', nullable: true, example: null, description: 'null/0 = unlimited (nothing is consumed for that group).'),
+        new OA\Property(property: 'is_active', type: 'boolean', example: true),
+    ],
+    type: 'object',
+)]
+#[OA\Schema(
+    schema: 'MissingRequiredServiceResponse',
+    properties: [
+        new OA\Property(property: 'success', type: 'boolean', example: false),
+        new OA\Property(property: 'message', type: 'string', example: 'User does not have the required active service.'),
+        new OA\Property(property: 'data', nullable: true, example: null),
+        new OA\Property(property: 'errors', type: 'array', items: new OA\Items(), example: []),
+        new OA\Property(property: 'reason', type: 'string', example: 'missing_required_service'),
+        new OA\Property(property: 'missing_service_groups', type: 'array', items: new OA\Items(type: 'integer'), example: [1], description: 'Indices of the event service_groups the user does not satisfy. Empty when the event accepts any active service.'),
     ],
     type: 'object',
 )]
@@ -105,6 +136,7 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'status', type: 'string', enum: ['registered', 'attended', 'cancelled', 'no_show'], example: 'registered'),
         new OA\Property(property: 'registered_at', type: 'string', format: 'date-time', nullable: true),
         new OA\Property(property: 'notes', type: 'string', nullable: true, example: 'Prefers front row.'),
+        new OA\Property(property: 'access_override', type: 'boolean', example: false, description: 'Exception marker: true when the participant was admitted past the access checks (check-in override or forced add) without consuming a service access.'),
     ],
     type: 'object',
 )]
@@ -120,6 +152,8 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'active', type: 'boolean', example: true),
         new OA\Property(property: 'has_active_service', type: 'boolean', example: true),
         new OA\Property(property: 'active_services', type: 'array', items: new OA\Items(type: 'object')),
+        new OA\Property(property: 'eligible', type: 'boolean', example: false, description: 'False only with include_ineligible=1 for users that do not satisfy the event service requirement.'),
+        new OA\Property(property: 'missing_service_groups', type: 'array', items: new OA\Items(type: 'integer'), example: [1], description: 'Indices of the event service_groups the user does not satisfy. Empty when eligible or when the event only requires any active service.'),
     ],
     type: 'object',
 )]
@@ -142,7 +176,13 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'start_date', type: 'string', format: 'date', example: '2026-06-01'),
         new OA\Property(property: 'end_date', type: 'string', format: 'date', nullable: true, example: '2026-12-31'),
         new OA\Property(property: 'requires_active_service', type: 'boolean', example: true),
-        new OA\Property(property: 'required_service_id', type: 'integer', nullable: true, example: 2),
+        new OA\Property(
+            property: 'service_groups',
+            type: 'array',
+            description: 'Required service groups as service IDs: OR inside a group, AND between groups, e.g. [[1,2],[5]] = (1 or 2) and 5. Empty groups are dropped; a service may appear only once in the whole event; every service must be visible to the organization. Forced to [] when requires_active_service is false. With requires_active_service=true and [] any active service is accepted. On update, omitting it keeps the current groups.',
+            items: new OA\Items(type: 'array', minItems: 1, items: new OA\Items(type: 'integer')),
+            example: [[1, 2], [5]],
+        ),
         new OA\Property(property: 'requires_payment', type: 'boolean', example: true, description: 'When true, payment_amount and payment_type must be provided.'),
         new OA\Property(property: 'payment_amount', type: 'number', format: 'float', nullable: true, example: 49.99, description: 'Required when requires_payment is true.'),
         new OA\Property(property: 'payment_type', type: 'string', nullable: true, maxLength: 3, example: 'EUR', description: 'Currency code for payment_amount (e.g. EUR, RON). Required when requires_payment is true.'),
@@ -178,6 +218,7 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'status', type: 'string', enum: ['registered', 'attended', 'cancelled', 'no_show'], example: 'registered'),
         new OA\Property(property: 'registered_at', type: 'string', format: 'date-time', nullable: true),
         new OA\Property(property: 'notes', type: 'string', nullable: true, example: 'Paid at reception.'),
+        new OA\Property(property: 'force', type: 'boolean', example: false, description: 'Requires checkins.override. Adds the user even when required services are missing; no access is consumed and the participation is marked access_override.'),
     ],
     type: 'object',
 )]
@@ -190,6 +231,7 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'registered_at', type: 'string', format: 'date-time', nullable: true),
         new OA\Property(property: 'notes', type: 'string', nullable: true, example: 'Adaugati rapid din lista de eligibili.'),
         new OA\Property(property: 'apply_to_future_occurrences', type: 'boolean', nullable: true, example: false, description: 'When true, also mirrors this bulk add (best effort) onto the sibling scheduled future occurrences (today or later) of the same event.'),
+        new OA\Property(property: 'force', type: 'boolean', example: false, description: 'Requires checkins.override. Users missing required services are added to the target occurrence anyway, without consuming accesses, marked access_override. Never applied to future occurrences.'),
     ],
     type: 'object',
 )]
@@ -200,6 +242,7 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'message', type: 'string', example: 'Participants added successfully.'),
         new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/EventParticipant')),
         new OA\Property(property: 'requires_payment', type: 'boolean', example: false, description: 'Informational only: mirrors the parent event requires_payment flag. Never blocks the bulk add.'),
+        new OA\Property(property: 'forced_user_ids', type: 'array', items: new OA\Items(type: 'integer'), example: [9], description: 'Users added through force (missing required services, no access consumed). Empty when nothing was forced.'),
         new OA\Property(
             property: 'future_occurrences_updated',
             type: 'array',
@@ -215,6 +258,7 @@ use OpenApi\Attributes as OA;
                         items: new OA\Items(properties: [
                             new OA\Property(property: 'user_id', type: 'integer', example: 9),
                             new OA\Property(property: 'reason', type: 'string', enum: ['already_registered', 'missing_required_service', 'capacity_full', 'service_access_unavailable'], example: 'already_registered'),
+                            new OA\Property(property: 'missing_service_groups', type: 'array', items: new OA\Items(type: 'integer'), example: [1], description: 'Only with reason=missing_required_service: indices of the unmet service_groups.'),
                         ], type: 'object'),
                     ),
                 ],

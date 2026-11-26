@@ -11,6 +11,7 @@ use App\Events\Services\EventOccurrenceGeneratorService;
 use App\Users\Http\Controllers\Controller;
 use App\Users\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
@@ -57,7 +58,7 @@ class EventController extends Controller
         $direction = $request->string('direction')->toString() === 'asc' ? 'asc' : 'desc';
 
         $events = Event::query()
-            ->with(['category', 'requiredService', 'location', 'instructor', 'group'])
+            ->with(['category', 'serviceRequirements.service', 'location', 'instructor', 'group'])
             ->withCount('occurrences')
             ->when($request->filled('category_id'), fn ($query) => $query->where('category_id', $request->integer('category_id')))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')->toString()))
@@ -92,7 +93,9 @@ class EventController extends Controller
     public function store(StoreEventRequest $request): JsonResponse
     {
         $event = DB::transaction(function () use ($request): Event {
-            $event = Event::query()->create($request->validated());
+            $data = $request->validated();
+            $event = Event::query()->create(Arr::except($data, ['service_groups']));
+            $event->syncServiceGroups($data['service_groups'] ?? []);
             $this->occurrences->generateForNewEvent($event);
 
             return $event;
@@ -101,7 +104,7 @@ class EventController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Event created successfully.',
-            'data' => new EventResource($event->load(['category', 'requiredService', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
+            'data' => new EventResource($event->load(['category', 'serviceRequirements.service', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
         ], 201);
     }
 
@@ -129,7 +132,7 @@ class EventController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Event retrieved successfully.',
-            'data' => new EventResource($event->load(['category', 'requiredService', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
+            'data' => new EventResource($event->load(['category', 'serviceRequirements.service', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
         ]);
     }
 
@@ -176,7 +179,11 @@ class EventController extends Controller
         DB::transaction(function () use ($request, $event): void {
             $event->refresh();
             $oldStatus = $event->status;
-            $event->update($request->validated());
+            $data = $request->validated();
+            $event->update(Arr::except($data, ['service_groups']));
+            if (array_key_exists('service_groups', $data)) {
+                $event->syncServiceGroups($data['service_groups']);
+            }
             DB::table('organization_event_limit_blocks')->where('event_id', $event->id)->delete();
             $scheduleChanged = array_intersect(
                 ['start_time', 'end_time', 'start_date', 'end_date', 'recurrence_type', 'recurrence_days', 'monthly_day', 'location'],
@@ -206,7 +213,7 @@ class EventController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Event updated successfully.',
-            'data' => new EventResource($event->load(['category', 'requiredService', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
+            'data' => new EventResource($event->load(['category', 'serviceRequirements.service', 'location', 'instructor', 'group', 'occurrences'])->loadCount('occurrences')),
         ]);
     }
 

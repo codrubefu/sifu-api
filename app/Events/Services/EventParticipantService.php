@@ -30,25 +30,36 @@ class EventParticipantService
      * informational requires_payment flag. Duplicate/eligibility/capacity are
      * blocking (reflected in `ok`/`reason`); requires_payment never blocks
      * here, it is only informational.
+     *
+     * With `$force` (caller already verified `checkins.override`), a missing
+     * required service no longer blocks: the result is `forced`. Duplicate and
+     * capacity stay blocking.
      */
-    public function evaluate(User $user, EventOccurrence $occurrence): EventParticipantEligibilityResult
+    public function evaluate(User $user, EventOccurrence $occurrence, bool $force = false): EventParticipantEligibilityResult
     {
-        $occurrence->loadMissing('event.requiredService');
+        $occurrence->loadMissing('event.serviceRequirements.service');
         $requiresPayment = $this->requiresPayment($occurrence);
 
         if ($this->isAlreadyRegistered($occurrence, $user->id)) {
             return EventParticipantEligibilityResult::rejected('already_registered', $requiresPayment);
         }
 
+        $missingServiceGroups = null;
         if (! $this->isEligible($user, $occurrence)) {
-            return EventParticipantEligibilityResult::rejected('missing_required_service', $requiresPayment);
+            $missingServiceGroups = $this->missingServiceGroups($user, $occurrence);
+
+            if (! $force) {
+                return EventParticipantEligibilityResult::rejected('missing_required_service', $requiresPayment, $missingServiceGroups);
+            }
         }
 
         if (! $this->hasAvailableCapacity($occurrence)) {
             return EventParticipantEligibilityResult::rejected('capacity_full', $requiresPayment);
         }
 
-        return EventParticipantEligibilityResult::allowed($requiresPayment);
+        return $missingServiceGroups === null
+            ? EventParticipantEligibilityResult::allowed($requiresPayment)
+            : EventParticipantEligibilityResult::forced($requiresPayment, $missingServiceGroups);
     }
 
     /**
@@ -63,6 +74,16 @@ class EventParticipantService
     public function isEligible(User $user, EventOccurrence $occurrence): bool
     {
         return $this->eligibility->canUserJoinOccurrence($user, $occurrence);
+    }
+
+    /**
+     * Indices of the event's required service groups the user does not satisfy.
+     *
+     * @return array<int, int>
+     */
+    public function missingServiceGroups(User $user, EventOccurrence $occurrence): array
+    {
+        return $this->eligibility->missingServiceGroupsForOccurrence($user, $occurrence);
     }
 
     /**

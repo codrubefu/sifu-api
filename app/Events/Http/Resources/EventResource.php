@@ -2,6 +2,7 @@
 
 namespace App\Events\Http\Resources;
 
+use App\Service\Models\Service;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -41,11 +42,22 @@ class EventResource extends JsonResource
             'start_date' => $this->start_date,
             'end_date' => $this->end_date,
             'requires_active_service' => $this->requires_active_service,
-            'required_service_id' => $this->required_service_id,
             'requires_payment' => $this->requires_payment,
             'payment_amount' => $this->payment_amount,
             'payment_type' => $this->payment_type,
-            'required_service' => $this->whenLoaded('requiredService'),
+            // Array<Array<Service summary>>: OR inside a group, AND between groups; ordered by group index.
+            'service_groups' => $this->whenLoaded('serviceRequirements', fn () => $this->resource->serviceGroups()
+                ->map(fn ($services) => $services->map(fn (Service $service): array => [
+                    'id' => $service->id,
+                    'name' => $service->name,
+                    'type' => $service->type,
+                    'price' => $service->price,
+                    'currency' => $service->currency,
+                    'max_accesses' => $service->max_accesses,
+                    'is_active' => $service->is_active,
+                ])->values()->all())
+                ->values()
+                ->all()),
             'max_participants' => $this->max_participants,
             'status' => $this->status,
             'occurrences_count' => $this->whenCounted('occurrences'),

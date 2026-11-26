@@ -15,6 +15,8 @@ class UpdateEventRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $this->prepareServiceGroups();
+
         $timeFields = collect(['start_time', 'end_time'])
             ->filter(fn (string $field) => is_string($this->input($field)) && preg_match('/^\d{2}:\d{2}:\d{2}$/', $this->input($field)))
             ->mapWithKeys(fn (string $field) => [$field => substr($this->input($field), 0, 5)])
@@ -30,6 +32,35 @@ class UpdateEventRequest extends FormRequest
                 'payment_type' => null,
             ]);
         }
+    }
+
+    /**
+     * `service_groups: number[][]` — OR inside a group, AND between groups.
+     * Empty groups are dropped; without `requires_active_service` there are no groups.
+     */
+    private function prepareServiceGroups(): void
+    {
+        if ($this->has('requires_active_service') && ! $this->boolean('requires_active_service')) {
+            $this->merge(['service_groups' => []]);
+
+            return;
+        }
+
+        $groups = $this->input('service_groups');
+        if ($groups === null && $this->has('service_groups')) {
+            $this->merge(['service_groups' => []]);
+
+            return;
+        }
+
+        if (! is_array($groups)) {
+            return;
+        }
+
+        $this->merge(['service_groups' => array_values(array_filter(
+            $groups,
+            fn ($group): bool => ! (is_array($group) && $group === []) && $group !== null,
+        ))]);
     }
 
     public function rules(): array
@@ -54,7 +85,14 @@ class UpdateEventRequest extends FormRequest
             'start_date' => ['sometimes', 'required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'requires_active_service' => ['sometimes', 'boolean'],
-            'required_service_id' => ['nullable', 'exists:services,id'],
+            'service_groups' => ['sometimes', 'array'],
+            'service_groups.*' => ['required', 'array', 'min:1'],
+            'service_groups.*.*' => [
+                'required',
+                'integer',
+                'distinct',
+                OrganizationScopedExistsRule::make('services', 'id', $this->user()?->organization_id)->whereNull('deleted_at'),
+            ],
             'requires_payment' => ['sometimes', 'boolean'],
             'payment_amount' => ['nullable', 'required_if:requires_payment,true', 'numeric', 'min:0'],
             'payment_type' => ['nullable', 'required_if:requires_payment,true', 'string', 'max:3'],

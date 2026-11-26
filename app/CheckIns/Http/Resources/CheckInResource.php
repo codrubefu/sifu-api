@@ -18,12 +18,16 @@ class CheckInResource extends JsonResource
             'verdict' => $this->resource['verdict'] ?? null,
             'access_allowed' => (bool) ($this->resource['access_allowed'] ?? false),
             'reason' => $this->resource['reason'] ?? null,
+            // Indices of the event's unmet `service_groups`; non-empty only when reason is missing_required_service.
+            'missing_service_groups' => array_values($this->resource['missing_service_groups'] ?? []),
             'requires_payment' => (bool) ($this->resource['requires_payment'] ?? false),
             'document_expired' => (bool) ($this->resource['document_expired'] ?? false),
             'active_subscription' => (bool) ($this->resource['active_subscription'] ?? false),
             'eligible_services' => $this->resource['eligible_services'] ?? [],
             'last_check_in' => $this->resource['last_check_in'] ?? null,
             'occurrence' => isset($this->resource['occurrence']) ? new EventOccurrenceResource($this->resource['occurrence']) : null,
+            'candidates' => $this->resource['candidates'] ?? [],
+            'candidates_truncated' => (bool) ($this->resource['candidates_truncated'] ?? false),
             'participant' => isset($this->resource['participant']) ? new EventParticipantResource($this->resource['participant']) : null,
         ];
     }

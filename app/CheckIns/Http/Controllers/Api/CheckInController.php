@@ -31,16 +31,35 @@ class CheckInController extends Controller
         return EventOccurrenceResource::collection($this->checkIns->currentOccurrences($request->user()));
     }
 
+    #[OA\Get(
+        path: '/check-ins/recent',
+        summary: 'List the latest attended check-ins (max 10)',
+        security: [['bearerAuth' => []]],
+        tags: ['Check-ins'],
+        parameters: [new OA\Parameter(name: 'limit', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 10))],
+        responses: [new OA\Response(response: 200, description: 'Latest check-ins, newest first.')]
+    )]
+    public function recent(Request $request): JsonResponse
+    {
+        $limit = $request->integer('limit', CheckInService::MAX_RECENT);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->checkIns->recent($limit > 0 ? $limit : CheckInService::MAX_RECENT),
+        ]);
+    }
+
     #[OA\Post(
         path: '/check-ins/search',
         summary: 'Search member for rapid check-in',
         security: [['bearerAuth' => []]],
         tags: ['Check-ins'],
         requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(required: ['query'], properties: [
-            new OA\Property(property: 'query', type: 'string'),
+            new OA\Property(property: 'query', type: 'string', description: 'Card code, phone, email, or first/last name (any order).'),
+            new OA\Property(property: 'user_id', type: 'integer', nullable: true, description: 'Pick a member from a previous multiple_matches candidate list.'),
             new OA\Property(property: 'occurrence_id', type: 'integer', nullable: true),
         ])),
-        responses: [new OA\Response(response: 200, description: 'Check-in verdict.')]
+        responses: [new OA\Response(response: 200, description: 'Check-in verdict, or verdict=multiple_matches with candidates. `missing_service_groups` (int[]) lists the unmet event service_groups indices when reason=missing_required_service, otherwise [].')]
     )]
     public function search(SearchCheckInMemberRequest $request): JsonResponse
     {
@@ -50,7 +69,11 @@ class CheckInController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => new CheckInResource($this->checkIns->search($request->string('query')->toString(), $occurrence)),
+            'data' => new CheckInResource($this->checkIns->search(
+                $request->string('query')->toString(),
+                $occurrence,
+                $request->integer('user_id') > 0 ? $request->integer('user_id') : null,
+            )),
         ]);
     }
 

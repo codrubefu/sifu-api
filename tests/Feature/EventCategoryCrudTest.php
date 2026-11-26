@@ -151,7 +151,6 @@ class EventCategoryCrudTest extends TestCase
             'start_date' => '2026-06-10',
             'end_date' => null,
             'requires_active_service' => false,
-            'required_service_id' => null,
             'requires_payment' => false,
             'payment_amount' => null,
             'payment_type' => null,

@@ -163,7 +163,6 @@ class EventOrganizationScopedValidationTest extends TestCase
             'start_date' => '2026-10-05',
             'end_date' => null,
             'requires_active_service' => false,
-            'required_service_id' => null,
             'requires_payment' => false,
             'payment_amount' => null,
             'payment_type' => null,

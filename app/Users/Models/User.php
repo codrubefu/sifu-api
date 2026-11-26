@@ -126,8 +126,11 @@ class User extends Authenticatable
 
     public function activeServices(): BelongsToMany
     {
-        $this->serviceAssignments()->with('service')->get()
-            ->each(fn (ServiceUser $assignment) => app(ServiceLifecycleService::class)->refresh($assignment));
+        // Eager loading calls this on an unsaved, unconstrained instance; refreshing there would touch every assignment.
+        if ($this->exists) {
+            $this->serviceAssignments()->with('service')->get()
+                ->each(fn (ServiceUser $assignment) => app(ServiceLifecycleService::class)->refresh($assignment));
+        }
 
         return $this->services()
             ->where('services.is_active', true)
@@ -142,7 +145,7 @@ class User extends Authenticatable
     public function eventOccurrences(): BelongsToMany
     {
         return $this->belongsToMany(EventOccurrence::class, 'event_occurrence_user')->using(EventParticipant::class)
-            ->withPivot(['status', 'registered_at', 'notes'])
+            ->withPivot(['status', 'registered_at', 'notes', 'access_override'])
             ->withTimestamps();
     }
 

@@ -11,6 +11,7 @@ use App\Users\Models\Organization;
 use App\Users\Models\Right;
 use App\Users\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class CheckInApiTest extends TestCase
@@ -28,7 +29,7 @@ class CheckInApiTest extends TestCase
             'accesses_used' => 0,
             'activated_at' => now()->subDay(),
         ]);
-        $occurrence = $this->occurrence($this->event(['requires_active_service' => true, 'required_service_id' => $service->id]));
+        $occurrence = $this->occurrence($this->event(['requires_active_service' => true], [[$service->id]]));
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/check-ins/search', ['query' => 'CARD-100', 'occurrence_id' => $occurrence->id])
@@ -41,9 +42,10 @@ class CheckInApiTest extends TestCase
             ->postJson('/api/check-ins/confirm', ['user_id' => $member->id, 'occurrence_id' => $occurrence->id])
             ->assertOk()
             ->assertJsonPath('data.verdict', 'allowed')
-            ->assertJsonPath('data.participant.status', 'attended');
+            ->assertJsonPath('data.participant.status', 'attended')
+            ->assertJsonPath('data.participant.access_override', false);
 
-        $this->assertDatabaseHas('event_occurrence_user', ['event_occurrence_id' => $occurrence->id, 'user_id' => $member->id, 'status' => 'attended']);
+        $this->assertDatabaseHas('event_occurrence_user', ['event_occurrence_id' => $occurrence->id, 'user_id' => $member->id, 'status' => 'attended', 'access_override' => false]);
         $this->assertDatabaseHas('service_user', ['user_id' => $member->id, 'service_id' => $service->id, 'accesses_used' => 1]);
         $this->assertDatabaseHas('audit_logs', ['event_type' => AuditLog::CHECKIN_ACCEPTED, 'subject_user_id' => $member->id]);
     }
@@ -53,7 +55,7 @@ class CheckInApiTest extends TestCase
         [$admin, $token] = $this->authenticatedUserWithRights(['checkins.manage']);
         $member = User::factory()->create(['organization_id' => $admin->organization_id]);
         $service = Service::query()->create($this->serviceData($admin->organization_id));
-        $occurrence = $this->occurrence($this->event(['requires_active_service' => true, 'required_service_id' => $service->id]));
+        $occurrence = $this->occurrence($this->event(['requires_active_service' => true], [[$service->id]]));
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/check-ins/confirm', ['user_id' => $member->id, 'occurrence_id' => $occurrence->id])
@@ -69,7 +71,7 @@ class CheckInApiTest extends TestCase
         [$admin, $token] = $this->authenticatedUserWithRights(['checkins.manage', 'checkins.override']);
         $member = User::factory()->create(['organization_id' => $admin->organization_id]);
         $service = Service::query()->create($this->serviceData($admin->organization_id, ['max_accesses' => 3]));
-        $occurrence = $this->occurrence($this->event(['requires_active_service' => true, 'required_service_id' => $service->id]));
+        $occurrence = $this->occurrence($this->event(['requires_active_service' => true], [[$service->id]]));
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/check-ins/confirm', [
@@ -79,12 +81,14 @@ class CheckInApiTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('data.verdict', 'override_allowed')
-            ->assertJsonPath('data.participant.status', 'attended');
+            ->assertJsonPath('data.participant.status', 'attended')
+            ->assertJsonPath('data.participant.access_override', true);
 
         $this->assertDatabaseHas('event_occurrence_user', [
             'event_occurrence_id' => $occurrence->id,
             'user_id' => $member->id,
             'status' => 'attended',
+            'access_override' => true,
         ]);
         $this->assertDatabaseMissing('service_user', [
             'user_id' => $member->id,
@@ -103,6 +107,101 @@ class CheckInApiTest extends TestCase
             ->postJson('/api/check-ins/search', ['query' => 'OTHER-CARD'])
             ->assertOk()
             ->assertJsonPath('data.member_found', false);
+    }
+
+    public function test_search_by_first_and_last_name_returns_single_member_in_any_order(): void
+    {
+        [$admin, $token] = $this->authenticatedUserWithRights(['checkins.manage']);
+        $member = User::factory()->create(['organization_id' => $admin->organization_id, 'first_name' => 'Ionela', 'last_name' => 'Zamfirescu']);
+
+        foreach (['Ionela Zamfirescu', 'zamfirescu ionela', 'Zamfir'] as $query) {
+            $this->withHeader('Authorization', "Bearer {$token}")
+                ->postJson('/api/check-ins/search', ['query' => $query])
+                ->assertOk()
+                ->assertJsonPath('data.member_found', true)
+                ->assertJsonPath('data.member.id', $member->id)
+                ->assertJsonPath('data.candidates', []);
+        }
+    }
+
+    public function test_search_by_shared_name_returns_candidates_and_user_id_selects_one(): void
+    {
+        [$admin, $token] = $this->authenticatedUserWithRights(['checkins.manage']);
+        $first = User::factory()->create(['organization_id' => $admin->organization_id, 'first_name' => 'Andrei', 'last_name' => 'Vasilescu', 'user_code' => 'CARD-A1']);
+        $second = User::factory()->create(['organization_id' => $admin->organization_id, 'first_name' => 'Andrei', 'last_name' => 'Vasilescu', 'user_code' => 'CARD-A2']);
+        $otherOrganization = Organization::factory()->create();
+        $foreign = User::factory()->create(['organization_id' => $otherOrganization->id, 'first_name' => 'Andrei', 'last_name' => 'Vasilescu']);
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/check-ins/search', ['query' => 'Andrei Vasilescu'])
+            ->assertOk()
+            ->assertJsonPath('data.member_found', false)
+            ->assertJsonPath('data.verdict', 'multiple_matches')
+            ->assertJsonPath('data.member', null)
+            ->assertJsonCount(2, 'data.candidates');
+
+        $ids = collect($response->json('data.candidates'))->pluck('id')->sort()->values()->all();
+        $this->assertSame([$first->id, $second->id], $ids);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/check-ins/search', ['query' => 'Andrei Vasilescu', 'user_id' => $second->id])
+            ->assertOk()
+            ->assertJsonPath('data.member_found', true)
+            ->assertJsonPath('data.member.id', $second->id);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/check-ins/search', ['query' => 'Andrei Vasilescu', 'user_id' => $foreign->id])
+            ->assertOk()
+            ->assertJsonPath('data.member_found', false)
+            ->assertJsonPath('data.verdict', 'not_found');
+    }
+
+    public function test_exact_card_code_wins_over_partial_name_matches(): void
+    {
+        [$admin, $token] = $this->authenticatedUserWithRights(['checkins.manage']);
+        $member = User::factory()->create(['organization_id' => $admin->organization_id, 'user_code' => 'CARD-7']);
+        User::factory()->create(['organization_id' => $admin->organization_id, 'user_code' => 'CARD-77']);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/check-ins/search', ['query' => 'CARD-7'])
+            ->assertOk()
+            ->assertJsonPath('data.member.id', $member->id);
+    }
+
+    public function test_recent_check_ins_returns_latest_ten_attended_newest_first_for_own_organization(): void
+    {
+        [$admin, $token] = $this->authenticatedUserWithRights(['checkins.manage']);
+        $occurrence = $this->occurrence($this->event());
+        $members = User::factory()->count(12)->create(['organization_id' => $admin->organization_id]);
+        foreach ($members as $index => $member) {
+            $occurrence->participants()->attach($member->id, ['status' => 'attended', 'registered_at' => now()->subMinutes(60 - $index)]);
+        }
+        $registeredOnly = User::factory()->create(['organization_id' => $admin->organization_id]);
+        $occurrence->participants()->attach($registeredOnly->id, ['status' => 'registered', 'registered_at' => now()]);
+
+        $otherOrganization = Organization::factory()->create();
+        $foreign = User::factory()->create(['organization_id' => $otherOrganization->id]);
+        $foreignOccurrenceId = DB::table('event_occurrences')->insertGetId(array_merge(
+            (array) DB::table('event_occurrences')->where('id', $occurrence->id)->first(['event_id', 'occurrence_date', 'start_datetime', 'end_datetime', 'status']),
+            ['organization_id' => $otherOrganization->id, 'occurrence_date' => now()->addDay()->toDateString(), 'created_at' => now(), 'updated_at' => now()],
+        ));
+        DB::table('event_occurrence_user')->insert(['event_occurrence_id' => $foreignOccurrenceId, 'user_id' => $foreign->id, 'status' => 'attended', 'registered_at' => now()->addMinute(), 'created_at' => now(), 'updated_at' => now()]);
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/check-ins/recent')
+            ->assertOk()
+            ->assertJsonCount(10, 'data')
+            ->assertJsonPath('data.0.user_id', $members->last()->id)
+            ->assertJsonPath('data.0.occurrence_id', $occurrence->id);
+
+        $ids = collect($response->json('data'))->pluck('user_id');
+        $this->assertNotContains($registeredOnly->id, $ids);
+        $this->assertNotContains($foreign->id, $ids);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/check-ins/recent?limit=50')
+            ->assertOk()
+            ->assertJsonCount(10, 'data');
     }
 
     public function test_check_in_requires_manage_right(): void
@@ -169,9 +268,9 @@ class CheckInApiTest extends TestCase
         $this->assertDatabaseHas('audit_logs', ['event_type' => AuditLog::CHECKIN_REFUSED, 'subject_user_id' => $member->id]);
     }
 
-    private function event(array $overrides = []): Event
+    private function event(array $overrides = [], array $serviceGroups = []): Event
     {
-        return Event::query()->create(array_merge([
+        $event = Event::query()->create(array_merge([
             'title' => 'Clasa test',
             'location' => 'Sala 1',
             'start_time' => '10:00',
@@ -179,11 +278,13 @@ class CheckInApiTest extends TestCase
             'recurrence_type' => 'once',
             'start_date' => now()->toDateString(),
             'requires_active_service' => false,
-            'required_service_id' => null,
             'requires_payment' => false,
             'max_participants' => null,
             'status' => 'active',
         ], $overrides));
+        $event->syncServiceGroups($serviceGroups);
+
+        return $event;
     }
 
     private function occurrence(Event $event): EventOccurrence

@@ -159,8 +159,8 @@ class EventParticipantCrudTest extends TestCase
         ]);
         $event = Event::query()->create($this->eventData([
             'requires_active_service' => true,
-            'required_service_id' => $requiredService->id,
         ]));
+        $event->syncServiceGroups([[$requiredService->id]]);
         $occurrence = $this->occurrence($event);
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
@@ -264,8 +264,8 @@ class EventParticipantCrudTest extends TestCase
         ]);
         $event = Event::query()->create($this->eventData([
             'requires_active_service' => true,
-            'required_service_id' => $service->id,
         ]));
+        $event->syncServiceGroups([[$service->id]]);
         $occurrence = $this->occurrence($event);
 
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -296,9 +296,9 @@ class EventParticipantCrudTest extends TestCase
         }
         $event = Event::query()->create($this->eventData([
             'requires_active_service' => true,
-            'required_service_id' => $service->id,
             'max_participants' => 2,
         ]));
+        $event->syncServiceGroups([[$service->id]]);
         $occurrence = $this->occurrence($event);
 
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -376,7 +376,6 @@ class EventParticipantCrudTest extends TestCase
             'start_date' => '2026-06-10',
             'end_date' => null,
             'requires_active_service' => false,
-            'required_service_id' => null,
             'requires_payment' => false,
             'payment_amount' => null,
             'payment_type' => null,

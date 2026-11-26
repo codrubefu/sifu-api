@@ -11,6 +11,15 @@ namespace App\Events\Services;
  * surface it to clients without it ever being a blocking reason on its own
  * (unlike `reason`, which is only set when `ok` is false and is meant to be
  * used by the caller to decide whether to reject the request).
+ *
+ * `missingServiceGroups` lists the indices of the unmet required service
+ * groups when `reason` is `missing_required_service` (empty otherwise, and
+ * also empty when the event only requires "any active service").
+ *
+ * `forced` is true when the result is allowed only because the caller asked
+ * to force past a missing required service (`checkins.override`); such a
+ * participation must not consume service accesses and is marked as an
+ * exception (`access_override`). `missingServiceGroups` then lists what was skipped.
  */
 final class EventParticipantEligibilityResult
 {
@@ -18,6 +27,9 @@ final class EventParticipantEligibilityResult
         public readonly bool $ok,
         public readonly ?string $reason,
         public readonly bool $requiresPayment,
+        /** @var array<int, int> */
+        public readonly array $missingServiceGroups = [],
+        public readonly bool $forced = false,
     ) {
     }
 
@@ -26,8 +38,19 @@ final class EventParticipantEligibilityResult
         return new self(true, null, $requiresPayment);
     }
 
-    public static function rejected(string $reason, bool $requiresPayment = false): self
+    /**
+     * @param array<int, int> $missingServiceGroups
+     */
+    public static function forced(bool $requiresPayment, array $missingServiceGroups): self
     {
-        return new self(false, $reason, $requiresPayment);
+        return new self(true, null, $requiresPayment, $missingServiceGroups, true);
+    }
+
+    /**
+     * @param array<int, int> $missingServiceGroups
+     */
+    public static function rejected(string $reason, bool $requiresPayment = false, array $missingServiceGroups = []): self
+    {
+        return new self(false, $reason, $requiresPayment, $missingServiceGroups);
     }
 }

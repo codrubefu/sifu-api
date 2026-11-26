@@ -10,6 +10,7 @@ class SearchCheckInMemberRequest extends FormRequest
     {
         return [
             'query' => ['required', 'string', 'min:2', 'max:120'],
+            'user_id' => ['nullable', 'integer'],
             'occurrence_id' => ['nullable', 'integer', 'exists:event_occurrences,id'],
         ];
     }

@@ -237,7 +237,6 @@ class EventParticipantBulkFutureTest extends TestCase
             'start_date' => '2026-09-01',
             'end_date' => null,
             'requires_active_service' => false,
-            'required_service_id' => null,
             'requires_payment' => false,
             'payment_amount' => null,
             'payment_type' => null,

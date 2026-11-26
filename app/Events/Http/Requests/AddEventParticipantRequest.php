@@ -19,6 +19,7 @@ class AddEventParticipantRequest extends FormRequest
             'status' => ['sometimes', Rule::in(['registered', 'attended', 'cancelled', 'no_show'])],
             'registered_at' => ['nullable', 'date'],
             'notes' => ['nullable', 'string'],
+            'force' => ['sometimes', 'boolean'],
         ];
     }
 }

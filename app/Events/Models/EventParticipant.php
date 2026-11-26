@@ -12,6 +12,8 @@ class EventParticipant extends Pivot
 
     protected $table = 'event_occurrence_user';
 
+    protected $casts = ['access_override' => 'boolean'];
+
     protected static function booted(): void
     {
         static::created(function (self $participant): void {
