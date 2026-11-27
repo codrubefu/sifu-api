@@ -137,6 +137,22 @@ use OpenApi\Attributes as OA;
         new OA\Property(property: 'registered_at', type: 'string', format: 'date-time', nullable: true),
         new OA\Property(property: 'notes', type: 'string', nullable: true, example: 'Prefers front row.'),
         new OA\Property(property: 'access_override', type: 'boolean', example: false, description: 'Exception marker: true when the participant was admitted past the access checks (check-in override or forced add) without consuming a service access.'),
+        new OA\Property(property: 'pivot_id', type: 'integer', example: 120, description: 'event_occurrence_user.id; payments use it as model_id (model_type=event_occurrence_user).'),
+        new OA\Property(property: 'invoice_number', type: 'string', nullable: true, example: 'INV000012', description: 'Set by POST /event-occurrences/{occurrence}/participants/{user}/invoice (paid events only).'),
+        new OA\Property(property: 'invoiced_at', type: 'string', format: 'date-time', nullable: true),
+        new OA\Property(
+            property: 'payment',
+            description: 'Only on list and invoice-generation responses. Latest confirmed payment for this participation, else latest payment; null when none.',
+            properties: [
+                new OA\Property(property: 'id', type: 'integer', example: 55),
+                new OA\Property(property: 'status', type: 'string', example: 'confirmed'),
+                new OA\Property(property: 'amount', type: 'number', format: 'float', example: 49.99),
+                new OA\Property(property: 'receipt_number', type: 'string', nullable: true, example: 'REC000010'),
+                new OA\Property(property: 'paid_at', type: 'string', format: 'date-time', nullable: true),
+            ],
+            type: 'object',
+            nullable: true,
+        ),
     ],
     type: 'object',
 )]

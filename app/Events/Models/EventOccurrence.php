@@ -33,7 +33,7 @@ class EventOccurrence extends Model
 
     public function participants(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'event_occurrence_user')->using(EventParticipant::class)->withPivot(['id', 'status', 'registered_at', 'notes', 'access_override'])->withTimestamps();
+        return $this->belongsToMany(User::class, 'event_occurrence_user')->using(EventParticipant::class)->withPivot(['id', 'status', 'registered_at', 'notes', 'access_override', 'invoice_number', 'invoiced_at'])->withTimestamps();
     }
 
     public function activeParticipants(): BelongsToMany

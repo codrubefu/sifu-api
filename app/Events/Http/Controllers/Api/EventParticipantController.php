@@ -8,12 +8,15 @@ use App\Events\Http\Requests\UpdateEventParticipantRequest;
 use App\Events\Http\Resources\EventEligibleParticipantResource;
 use App\Events\Http\Resources\EventParticipantResource;
 use App\Events\Models\EventOccurrence;
+use App\Events\Models\EventParticipant;
 use App\Events\Services\EventEligibilityService;
+use App\Events\Services\EventParticipantInvoiceService;
 use App\Events\Services\EventParticipantService;
 use App\Events\Services\OccurrenceAttendancePdfService;
 use App\Service\Services\ServiceLifecycleService;
 use App\Users\Http\Controllers\Controller;
 use App\Users\Models\User;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -27,6 +30,7 @@ class EventParticipantController extends Controller
         private readonly EventParticipantService $participants,
         private readonly ServiceLifecycleService $serviceLifecycle,
         private readonly EventEligibilityService $eligibility,
+        private readonly EventParticipantInvoiceService $invoices,
     )
     {
     }
@@ -55,9 +59,10 @@ class EventParticipantController extends Controller
     )]
     public function index(EventOccurrence $occurrence): AnonymousResourceCollection
     {
-        return EventParticipantResource::collection(
-            $occurrence->participants()->orderBy('last_name')->orderBy('first_name')->paginate(request()->integer('per_page', 15))
-        );
+        $participants = $occurrence->participants()->orderBy('last_name')->orderBy('first_name')->paginate(request()->integer('per_page', 15));
+        $this->loadPayments($participants->getCollection());
+
+        return EventParticipantResource::collection($participants);
     }
 
     public function downloadPdf(Request $request, EventOccurrence $occurrence, OccurrenceAttendancePdfService $pdf): Response
@@ -480,6 +485,97 @@ class EventParticipantController extends Controller
             'message' => 'Participant removed successfully.',
             'data' => null,
         ]);
+    }
+
+    #[OA\Post(
+        path: '/event-occurrences/{occurrence}/participants/{user}/invoice',
+        summary: 'Generate participant invoice',
+        description: 'Issues (idempotently) an invoice number from the organization invoice sequence for a participation in a paid event (requires_payment + payment_amount > 0). Repeated calls return the same number. Amount = event payment_amount, currency = event payment_type.',
+        security: [['bearerAuth' => []]],
+        tags: ['Event Participants'],
+        parameters: [
+            new OA\PathParameter(name: 'occurrence', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\PathParameter(name: 'user', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Invoice number assigned (or already present).', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/EventParticipant')])),
+            new OA\Response(response: 401, description: 'Unauthenticated.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Forbidden.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 404, description: 'Occurrence (other organization) or participant not found.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'reason=event_not_payable (event without requires_payment/payment_amount) or reason=participant_cancelled.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
+    public function generateInvoice(Request $request, EventOccurrence $occurrence, User $user): JsonResponse
+    {
+        $participant = $this->participantOrFail($request, $occurrence, $user);
+        $occurrence->loadMissing('event');
+
+        if (! EventParticipantInvoiceService::isPayable($occurrence->event)) {
+            return $this->error('Event does not require payment; no invoice can be issued.', 422, ['reason' => 'event_not_payable']);
+        }
+        if (blank($participant->invoice_number) && $participant->status === 'cancelled') {
+            return $this->error('Cancelled participations cannot be invoiced.', 422, ['reason' => 'participant_cancelled']);
+        }
+
+        $this->invoices->generate($participant);
+
+        $member = $occurrence->participants()->whereKey($user->id)->firstOrFail();
+        $this->loadPayments(new EloquentCollection([$member]));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Invoice generated successfully.',
+            'data' => new EventParticipantResource($member),
+        ]);
+    }
+
+    #[OA\Get(
+        path: '/event-occurrences/{occurrence}/participants/{user}/invoice/{format}',
+        summary: 'Download participant invoice',
+        description: 'Downloads the participant invoice as PDF (default) or UBL e-Factura XML. 404 when no invoice number was generated.',
+        security: [['bearerAuth' => []]],
+        tags: ['Event Participants'],
+        parameters: [
+            new OA\PathParameter(name: 'occurrence', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\PathParameter(name: 'user', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\PathParameter(name: 'format', required: true, description: 'Optional in practice; omitted = pdf.', schema: new OA\Schema(type: 'string', enum: ['pdf', 'xml'])),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Invoice document.', content: [new OA\MediaType(mediaType: 'application/pdf'), new OA\MediaType(mediaType: 'application/xml')]),
+            new OA\Response(response: 401, description: 'Unauthenticated.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Forbidden.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 404, description: 'Not found or no invoice generated.', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
+    public function invoice(Request $request, EventOccurrence $occurrence, User $user, string $format = 'pdf'): Response
+    {
+        $participant = $this->participantOrFail($request, $occurrence, $user);
+        abort_if(blank($participant->invoice_number), 404);
+
+        return $format === 'xml'
+            ? $this->invoices->xmlDownload($participant)
+            : $this->invoices->download($participant);
+    }
+
+    private function participantOrFail(Request $request, EventOccurrence $occurrence, User $user): EventParticipant
+    {
+        abort_unless((int) $occurrence->organization_id === (int) $request->user()->organization_id, 404);
+
+        return EventParticipant::query()
+            ->where('event_occurrence_id', $occurrence->id)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+    }
+
+    /**
+     * Eager-load payments on the pivots of a participant (User) collection.
+     */
+    private function loadPayments(\Illuminate\Support\Collection $members): void
+    {
+        $pivots = $members->pluck('pivot')->filter();
+        if ($pivots->isNotEmpty()) {
+            (new EloquentCollection($pivots->all()))->load('payments');
+        }
     }
 
     private function overrideNotAllowed(): JsonResponse

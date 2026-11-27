@@ -3,7 +3,10 @@
 namespace App\Events\Models;
 
 use App\Notifications\Events\NotificationRequested;
+use App\Payments\Models\Payment;
 use App\Users\Models\User;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 
 class EventParticipant extends Pivot
@@ -12,7 +15,27 @@ class EventParticipant extends Pivot
 
     protected $table = 'event_occurrence_user';
 
-    protected $casts = ['access_override' => 'boolean'];
+    /** Participations that count as a payment obligation when the event requires payment. */
+    public const BILLABLE_STATUSES = ['registered', 'attended'];
+
+    protected $casts = ['access_override' => 'boolean', 'invoiced_at' => 'datetime'];
+
+    public function occurrence(): BelongsTo
+    {
+        return $this->belongsTo(EventOccurrence::class, 'event_occurrence_id');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /** Payments targeting this participation (`payments.model_type = event_occurrence_user`). */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class, 'model_id')
+            ->where('model_type', Payment::MODEL_TYPE_EVENT_OCCURRENCE_USER);
+    }
 
     protected static function booted(): void
     {

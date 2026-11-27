@@ -55,6 +55,11 @@ Route::middleware(['auth.bearer', 'organization.limits'])->group(function (): vo
         ->middleware('right:event_participants.manage');
     Route::delete('/event-occurrences/{occurrence}/participants/{user}', [EventParticipantController::class, 'destroy'])
         ->middleware('right:event_participants.manage');
+    Route::post('/event-occurrences/{occurrence}/participants/{user}/invoice', [EventParticipantController::class, 'generateInvoice'])
+        ->middleware('right:event_participants.manage');
+    Route::get('/event-occurrences/{occurrence}/participants/{user}/invoice/{format?}', [EventParticipantController::class, 'invoice'])
+        ->whereIn('format', ['pdf', 'xml'])
+        ->middleware('right:event_participants.view,event_participants.manage');
 
     Route::get('/check-ins/occurrences/current', [CheckInController::class, 'currentOccurrences'])
         ->middleware('right:event_participants.manage,checkins.manage');

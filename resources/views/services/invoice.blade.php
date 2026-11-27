@@ -29,7 +29,7 @@
         <div class="col right">
             <strong>Factura: {{ $invoiceNumber }}</strong><br>
             Data: {{ $issuedAt->format('d.m.Y') }}<br>
-            Assignment: #{{ $assignment->id }}
+            {{ $reference }}
         </div>
     </div>
     <div>
@@ -41,7 +41,7 @@
     <table>
         <thead>
         <tr>
-            <th>Serviciu</th>
+            <th>{{ $lineLabel }}</th>
             <th class="right">Cantitate</th>
             <th class="right">Pret</th>
             <th class="right">Total</th>
@@ -49,14 +49,14 @@
         </thead>
         <tbody>
         <tr>
-            <td>{{ $service->name }}</td>
+            <td>{{ $lineName }}</td>
             <td class="right">1</td>
-            <td class="right">{{ $amount }} {{ $service->currency }}</td>
-            <td class="right">{{ $amount }} {{ $service->currency }}</td>
+            <td class="right">{{ $amount }} {{ $currency }}</td>
+            <td class="right">{{ $amount }} {{ $currency }}</td>
         </tr>
         </tbody>
     </table>
-    <div class="total">Total: {{ $amount }} {{ $service->currency }}</div>
+    <div class="total">Total: {{ $amount }} {{ $currency }}</div>
 </main>
 </body>
 </html>

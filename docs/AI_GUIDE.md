@@ -46,7 +46,7 @@ to find adjacent cases. Do not load every test in a row by default.
 | HTTP push | `app/Notifications/Services/NotificationSender.php::push`; `config/services.php` → `push`; device invalidation and legacy token fallback live here | Start at `EventNotificationLayerTest`; check provider-fake coverage before changing transport |
 | Payment callback | `routes/payment.php` → `PaymentController::callback` → `PaymentService::processCallback`; `config/services.php` → `payments` | `PaymentApiTest`, `PaymentLifecycleTest` |
 | File scanning/storage | `app/Users/Services/AntivirusScanner.php` invokes configured ClamAV binary; document/export controllers/jobs use Laravel Storage; `config/filesystems.php` | `UserDocumentTest`, `GdprWorkflowTest` |
-| Local PDF rendering | `ReceiptService`, `ServiceInvoiceService`, `PaymentNoteService`, `OccurrenceAttendancePdfService`; templates in `resources/views` | `PaymentApiTest`, `ServiceCrudTest`, `EventAttendancePdfDownloadTest` |
+| Local PDF rendering | `ReceiptService`, `ServiceInvoiceService` + `EventParticipantInvoiceService` (shared `InvoiceDocumentRenderer`), `PaymentNoteService`, `OccurrenceAttendancePdfService`; templates in `resources/views` | `PaymentApiTest`, `ServiceCrudTest`, `Events/EventParticipantInvoiceTest`, `EventAttendancePdfDownloadTest` |
 
 No Stripe/PayPal SDK integration was found. Mail-provider/S3 configuration entries
 are available defaults, not proof of deployed integrations. Keep existing small

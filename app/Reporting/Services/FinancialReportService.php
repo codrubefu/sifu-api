@@ -2,9 +2,12 @@
 
 namespace App\Reporting\Services;
 
+use App\Events\Models\EventParticipant;
+use App\Events\Services\EventParticipantInvoiceService;
 use App\Payments\Models\Payment;
 use App\Reporting\Models\Segment;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -43,9 +46,15 @@ class FinancialReportService
             $assignments->whereExists(fn ($q) => $q->selectRaw('1')->from('location_user as lu')
                 ->whereColumn('lu.user_id', 'member.id')->where('lu.location_id', $filters['location_id']));
         }
-        $invoiced = (float) (clone $assignments)->sum('s.price');
+        $serviceInvoiced = (float) (clone $assignments)->sum('s.price');
         $serviceRevenue = (float) (clone $confirmed)
             ->where('payments.model_type', Payment::MODEL_TYPE_SERVICE_USER)->sum('payments.amount');
+        $eventObligations = $this->eventObligations($organizationId, $filters);
+        $eventInvoiced = $eventObligations ? (float) (clone $eventObligations)->sum('e.payment_amount') : 0.0;
+        $eventRevenue = (float) (clone $confirmed)
+            ->where('payments.model_type', Payment::MODEL_TYPE_EVENT_OCCURRENCE_USER)->sum('payments.amount');
+        $invoiced = $serviceInvoiced + $eventInvoiced;
+        $paid = $serviceRevenue + $eventRevenue;
 
         $renewals = (clone $assignments)->whereExists(fn ($q) => $q->selectRaw('1')
             ->from('service_user as previous')
@@ -71,7 +80,15 @@ class FinancialReportService
             'totals' => ['confirmed' => $confirmedTotal, 'refunded' => $refundedTotal, 'net' => $confirmedTotal - $refundedTotal, 'count' => (clone $payments)->count()],
             'revenue_by_period' => $revenue,
             $groupBy === 'service_type' ? 'revenue_by_service_type' : 'revenue_by_service' => $serviceBreakdown,
-            'receivables' => ['invoiced' => $invoiced, 'paid' => $serviceRevenue, 'outstanding' => max(0, $invoiced - $serviceRevenue)],
+            'receivables' => [
+                'invoiced' => $invoiced,
+                'paid' => $paid,
+                'outstanding' => max(0, $invoiced - $paid),
+                'by_type' => [
+                    'service' => ['invoiced' => $serviceInvoiced, 'paid' => $serviceRevenue, 'outstanding' => max(0, $serviceInvoiced - $serviceRevenue)],
+                    'event' => ['invoiced' => $eventInvoiced, 'paid' => $eventRevenue, 'outstanding' => max(0, $eventInvoiced - $eventRevenue)],
+                ],
+            ],
             'renewals' => $renewals,
             'bank_reconciliation' => [
                 'total' => (float) (clone $bank)->sum('payments.amount'),
@@ -158,30 +175,145 @@ class FinancialReportService
             $query->whereIn('member.id', $memberIds);
         }
 
-        return $query->get()->map(function ($row): array {
-            $invoiced = (float) $row->invoiced_amount;
-            $paid = (float) $row->paid_amount;
-            $balance = $invoiced - $paid;
-            $daysOverdue = $balance > 0
-                ? (int) max(0, Carbon::parse($row->invoiced_at)->startOfDay()->diffInDays(today(), false))
-                : 0;
+        $serviceRows = $query->get()->map(fn ($row): array => $this->receivableRow($row, [
+            'obligation_type' => 'service',
+            'service_id' => $row->service_id,
+            'service_name' => $row->service_name,
+            'event_id' => null,
+            'event_title' => null,
+            'occurrence_id' => null,
+        ]));
 
-            return [
-                'obligation_id' => $row->obligation_id,
-                'invoiced_at' => Carbon::parse($row->invoiced_at)->toIso8601String(),
-                'invoice_number' => $row->invoice_number,
-                'service_id' => $row->service_id,
-                'service_name' => $row->service_name,
-                'member_id' => $row->member_id,
-                'member_name' => trim($row->first_name.' '.$row->last_name),
-                'currency' => $row->currency,
-                'invoiced_amount' => $invoiced,
-                'paid_amount' => $paid,
-                'balance' => $balance,
-                'days_overdue' => $daysOverdue,
-                'aging_bucket' => $this->agingBucket($daysOverdue, $balance),
-            ];
+        return $serviceRows
+            ->concat($this->eventReceivableRows($organizationId, $filters))
+            ->sortBy([['invoiced_at', 'asc'], ['obligation_type', 'desc'], ['obligation_id', 'asc']])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Event obligations: one row per billable participation (registered/attended)
+     * in a paid event; due date (invoiced_at) = occurrence start.
+     */
+    private function eventReceivableRows(int $organizationId, array $filters): array
+    {
+        $query = $this->eventObligations($organizationId, $filters);
+        if ($query === null) {
+            return [];
+        }
+
+        $confirmedPayments = DB::table('payments')
+            ->select('model_id')
+            ->selectRaw('SUM(amount) as paid_amount')
+            ->where('organization_id', $organizationId)
+            ->where('model_type', Payment::MODEL_TYPE_EVENT_OCCURRENCE_USER)
+            ->where('status', Payment::STATUS_CONFIRMED)
+            ->groupBy('model_id');
+
+        $query->leftJoinSub($confirmedPayments, 'confirmed_payments', fn ($join) => $join->on('confirmed_payments.model_id', '=', 'eou.id'))
+            ->select([
+                'eou.id as obligation_id',
+                'eo.start_datetime as invoiced_at',
+                'eou.invoice_number',
+                'e.id as event_id',
+                'e.title as event_title',
+                'eo.id as occurrence_id',
+                'e.payment_type as currency',
+                'member.id as member_id',
+                'member.first_name',
+                'member.last_name',
+                'e.payment_amount as invoiced_amount',
+            ])
+            ->selectRaw('COALESCE(confirmed_payments.paid_amount, 0) as paid_amount');
+
+        if (isset($filters['member_id'])) {
+            $query->where('member.id', $filters['member_id']);
+        }
+        if (isset($filters['from'])) {
+            $query->where('eo.start_datetime', '>=', $filters['from'].' 00:00:00');
+        }
+        if (isset($filters['to'])) {
+            $query->where('eo.start_datetime', '<=', $filters['to'].' 23:59:59');
+        }
+
+        return $query->get()->map(function ($row): array {
+            $row->currency = $row->currency ?: 'RON';
+
+            return $this->receivableRow($row, [
+                'obligation_type' => 'event',
+                'service_id' => null,
+                'service_name' => EventParticipantInvoiceService::lineName($row->event_title, $row->invoiced_at),
+                'event_id' => (int) $row->event_id,
+                'event_title' => $row->event_title,
+                'occurrence_id' => (int) $row->occurrence_id,
+            ]);
         })->all();
+    }
+
+    private function receivableRow(object $row, array $target): array
+    {
+        $invoiced = (float) $row->invoiced_amount;
+        $paid = (float) $row->paid_amount;
+        $balance = $invoiced - $paid;
+        $daysOverdue = $balance > 0
+            ? (int) max(0, Carbon::parse($row->invoiced_at)->startOfDay()->diffInDays(today(), false))
+            : 0;
+
+        return [
+            'obligation_id' => $row->obligation_id,
+            'obligation_type' => $target['obligation_type'],
+            'invoiced_at' => Carbon::parse($row->invoiced_at)->toIso8601String(),
+            'invoice_number' => $row->invoice_number,
+            'service_id' => $target['service_id'],
+            'service_name' => $target['service_name'],
+            'event_id' => $target['event_id'],
+            'event_title' => $target['event_title'],
+            'occurrence_id' => $target['occurrence_id'],
+            'member_id' => $row->member_id,
+            'member_name' => trim($row->first_name.' '.$row->last_name),
+            'currency' => $row->currency,
+            'invoiced_amount' => $invoiced,
+            'paid_amount' => $paid,
+            'balance' => $balance,
+            'days_overdue' => $daysOverdue,
+            'aging_bucket' => $this->agingBucket($daysOverdue, $balance),
+        ];
+    }
+
+    /**
+     * Base query of event payment obligations: participations with status
+     * registered/attended in non-deleted events with requires_payment and
+     * payment_amount > 0, on non-cancelled occurrences of the organization.
+     * Location and segment filters apply to the member. Returns null when a
+     * service-specific filter (service_id / service_type) excludes events.
+     */
+    private function eventObligations(int $organizationId, array $filters): ?QueryBuilder
+    {
+        if (isset($filters['service_id']) || isset($filters['service_type'])) {
+            return null;
+        }
+
+        $query = DB::table('event_occurrence_user as eou')
+            ->join('event_occurrences as eo', 'eo.id', '=', 'eou.event_occurrence_id')
+            ->join('events as e', 'e.id', '=', 'eo.event_id')
+            ->join('users as member', 'member.id', '=', 'eou.user_id')
+            ->where('eo.organization_id', $organizationId)
+            ->where('e.requires_payment', true)
+            ->whereNotNull('e.payment_amount')
+            ->where('e.payment_amount', '>', 0)
+            ->whereNull('e.deleted_at')
+            ->where('eo.status', '!=', 'cancelled')
+            ->whereIn('eou.status', EventParticipant::BILLABLE_STATUSES);
+
+        if (isset($filters['location_id'])) {
+            $query->whereExists(fn ($q) => $q->selectRaw('1')->from('location_user as lu')
+                ->whereColumn('lu.user_id', 'member.id')->where('lu.location_id', $filters['location_id']));
+        }
+        if (($memberIds = $this->segmentMemberIds($organizationId, $filters)) !== null) {
+            $query->whereIn('member.id', $memberIds);
+        }
+
+        return $query;
     }
 
     private function agingBucket(int $daysOverdue, float $balance): ?string
@@ -226,9 +358,13 @@ class FinancialReportService
         }
         $memberIds = $this->segmentMemberIds($organizationId, $filters);
         if ($memberIds !== null) {
-            $query->where('payments.model_type', Payment::MODEL_TYPE_SERVICE_USER)
-                ->whereExists(fn ($q) => $q->selectRaw('1')->from('service_user as segment_su')
-                    ->whereColumn('segment_su.id', 'payments.model_id')->whereIn('segment_su.user_id', $memberIds));
+            $query->where(fn ($scope) => $scope
+                ->where(fn ($service) => $service->where('payments.model_type', Payment::MODEL_TYPE_SERVICE_USER)
+                    ->whereExists(fn ($q) => $q->selectRaw('1')->from('service_user as segment_su')
+                        ->whereColumn('segment_su.id', 'payments.model_id')->whereIn('segment_su.user_id', $memberIds)))
+                ->orWhere(fn ($event) => $event->where('payments.model_type', Payment::MODEL_TYPE_EVENT_OCCURRENCE_USER)
+                    ->whereExists(fn ($q) => $q->selectRaw('1')->from('event_occurrence_user as segment_eou')
+                        ->whereColumn('segment_eou.id', 'payments.model_id')->whereIn('segment_eou.user_id', $memberIds))));
         }
         return $query;
     }
@@ -282,6 +418,7 @@ class FinancialReportService
                 $members = (int) $row->members;
 
                 return array_filter([
+                    'obligation_type' => 'service',
                     'service_id' => $groupBy === 'service' ? (int) $row->id : null,
                     'service_name' => $groupBy === 'service' ? $row->name : null,
                     'service_type' => $row->type,
@@ -292,7 +429,67 @@ class FinancialReportService
                     'outstanding' => max(0, $invoiced - $confirmed + $refunded),
                     'average_revenue_per_member' => $members > 0 ? ($confirmed - $refunded) / $members : 0.0,
                 ], fn ($value) => $value !== null);
-            })->all();
+            })
+            ->concat($this->eventBreakdown($organizationId, $filters, $groupBy))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Event obligations in the service breakdown: one row per event for
+     * group_by=service (service_type 'event', with event_id/event_title), or a
+     * single service_type 'event' row for group_by=service_type.
+     */
+    private function eventBreakdown(int $organizationId, array $filters, string $groupBy): array
+    {
+        $query = $this->eventObligations($organizationId, $filters);
+        if ($query === null) {
+            return [];
+        }
+
+        $paymentTotals = $this->payments($organizationId, $filters)
+            ->where('payments.model_type', Payment::MODEL_TYPE_EVENT_OCCURRENCE_USER)
+            ->selectRaw('payments.model_id as participation_id')
+            ->selectRaw('SUM(CASE WHEN payments.status = ? THEN payments.amount ELSE 0 END) as confirmed', [Payment::STATUS_CONFIRMED])
+            ->selectRaw('SUM(CASE WHEN payments.status = ? THEN payments.amount ELSE 0 END) as refunded', [Payment::STATUS_REFUNDED])
+            ->groupBy('payments.model_id');
+
+        $query->leftJoinSub($paymentTotals, 'payment_totals', fn ($join) => $join->on('payment_totals.participation_id', '=', 'eou.id'));
+
+        if ($groupBy === 'service') {
+            $query->select(['e.id', 'e.title'])->groupBy('e.id', 'e.title')->orderBy('e.title');
+        }
+
+        return $query
+            ->selectRaw('COUNT(eou.id) as subscriptions')
+            ->selectRaw('COUNT(DISTINCT eou.user_id) as members')
+            ->selectRaw('SUM(e.payment_amount) as invoiced')
+            ->selectRaw('SUM(COALESCE(payment_totals.confirmed, 0)) as confirmed')
+            ->selectRaw('SUM(COALESCE(payment_totals.refunded, 0)) as refunded')
+            ->get()
+            ->filter(fn ($row) => (int) $row->subscriptions > 0)
+            ->map(function ($row) use ($groupBy): array {
+                $invoiced = (float) $row->invoiced;
+                $confirmed = (float) $row->confirmed;
+                $refunded = (float) $row->refunded;
+                $members = (int) $row->members;
+
+                return array_filter([
+                    'obligation_type' => 'event',
+                    'service_name' => $groupBy === 'service' ? 'Eveniment '.$row->title : null,
+                    'event_id' => $groupBy === 'service' ? (int) $row->id : null,
+                    'event_title' => $groupBy === 'service' ? $row->title : null,
+                    'service_type' => 'event',
+                    'subscriptions' => (int) $row->subscriptions,
+                    'invoiced' => $invoiced,
+                    'confirmed' => $confirmed,
+                    'refunded' => $refunded,
+                    'outstanding' => max(0, $invoiced - $confirmed + $refunded),
+                    'average_revenue_per_member' => $members > 0 ? ($confirmed - $refunded) / $members : 0.0,
+                ], fn ($value) => $value !== null);
+            })
+            ->values()
+            ->all();
     }
 
     private function periodExpression(string $period): string
