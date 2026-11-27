@@ -51,11 +51,11 @@ class StoreUserRequest extends FormRequest
             'group_ids' => ['sometimes', 'array'],
             'group_ids.*' => ['integer', OrganizationScopedExistsRule::make('groups', 'id', $this->user()?->organization_id)],
             'location_ids' => ['sometimes', 'array'],
-            'location_ids.*' => ['integer', 'exists:locations,id'],
+            'location_ids.*' => ['integer', OrganizationScopedExistsRule::make('locations', 'id', $this->user()?->organization_id)],
             'service_ids' => ['sometimes', 'array'],
-            'service_ids.*' => ['integer', 'exists:services,id'],
+            'service_ids.*' => ['integer', OrganizationScopedExistsRule::make('services', 'id', $this->user()?->organization_id)],
             'services' => ['sometimes', 'array'],
-            'services.*.id' => ['required_with:services', 'integer', 'exists:services,id'],
+            'services.*.id' => ['required_with:services', 'integer', OrganizationScopedExistsRule::make('services', 'id', $this->user()?->organization_id)],
             'services.*.start_date' => ['sometimes', 'date'],
         ];
     }

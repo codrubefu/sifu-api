@@ -16,7 +16,7 @@ class UpdateMePasswordRequest extends FormRequest
     {
         return [
             'current_password' => ['required', 'string', 'current_password'],
-            'password' => ['required', 'string', PasswordPolicy::for($this->user()?->hasAnyRight(['users.manage', 'rights.manage']) ? 'administrator' : 'operator'), 'confirmed'],
+            'password' => ['required', 'string', PasswordPolicy::for($this->user()?->hasAnyRight(['users.manage']) ? 'administrator' : 'operator'), 'confirmed'],
             'password_confirmation' => ['required', 'string'],
         ];
     }

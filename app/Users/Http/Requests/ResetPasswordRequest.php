@@ -31,6 +31,6 @@ class ResetPasswordRequest extends FormRequest
             ->where('organization_id', $this->input('organization_id'))
             ->first();
 
-        return $user?->hasAnyRight(['users.manage', 'rights.manage']) ? 'administrator' : 'operator';
+        return $user?->hasAnyRight(['users.manage']) ? 'administrator' : 'operator';
     }
 }

@@ -177,6 +177,8 @@ Important rules:
 - Reuse existing right naming conventions: `module.view`, `module.manage`, `module.create`, `module.update`, `module.delete`, `module.restore`.
 - Preserve the default self-profile rule: if a user has no explicit rights through any group, `User::hasRight()` / `User::hasAnyRight()` must treat them as having `profile.view` only.
 - If adding new rights, seed them and update OpenAPI/docs/tests.
+- The rights catalogue is platform-wide and code-only: add/rename rights in seeders/migrations, never through the API. Do not reintroduce `POST/PUT/PATCH/DELETE /api/rights` or a `rights.manage` right for tenant users — a tenant-writable global catalogue lets one organization change authorization in all others.
+- Models without the organization global scope (for example `ServiceUser`, `Payment`, `GdprExport`) must not be route-bound unconstrained; constrain the binding to the authenticated organization (see `ServiceUser::resolveRouteBinding`) and add a cross-tenant 404 test.
 - Respect `OrganizationAccessService`; some organizations can have right groups disabled.
 - Do not bypass rights checks in controllers unless the route is explicitly public.
 

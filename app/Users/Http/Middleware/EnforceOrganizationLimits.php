@@ -6,7 +6,6 @@ use App\Users\Services\OrganizationSubscriptionService;
 use Closure;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnforceOrganizationLimits
@@ -15,12 +14,10 @@ class EnforceOrganizationLimits
 
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->isMethodSafe() || ! in_array($request->segment(2), ['users', 'clients', 'administrators', 'groups', 'rights', 'locations', 'events', 'event-occurrences'], true)) {
+        if ($request->isMethodSafe() || ! in_array($request->segment(2), ['users', 'clients', 'administrators', 'groups', 'locations', 'events', 'event-occurrences'], true)) {
             return $next($request);
         }
-        $ids = $request->segment(2) === 'rights'
-            ? DB::table('organizations')->orderBy('id')->pluck('id')->all()
-            : [$request->user()->organization_id];
+        $ids = [$request->user()->organization_id];
 
         return $this->subscriptions->guard($ids, function () use ($request, $next): Response {
             $response = $next($request);

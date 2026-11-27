@@ -50,12 +50,10 @@ Route::middleware(['auth.bearer', 'organization.limits'])->group(function (): vo
     Route::post('/users/{user}/privacy/erasure-requests', [GdprController::class, 'requestErasure'])->middleware('right:gdpr.process');
     Route::post('/privacy/requests/{gdprRequest}/process', [GdprController::class, 'process'])->middleware('right:gdpr.process');
 
+    // The rights catalogue is platform-wide and code-defined (seeders); it is read-only through the API
+    // so that no tenant can rename/create/delete rights that every organization's authorization depends on.
     Route::get('/rights', [RightController::class, 'index'])->middleware('right:rights.view');
-    Route::post('/rights', [RightController::class, 'store'])->middleware('right:rights.manage');
     Route::get('/rights/{right}', [RightController::class, 'show'])->middleware('right:rights.view');
-    Route::put('/rights/{right}', [RightController::class, 'update'])->middleware('right:rights.manage');
-    Route::patch('/rights/{right}', [RightController::class, 'update'])->middleware('right:rights.manage');
-    Route::delete('/rights/{right}', [RightController::class, 'destroy'])->middleware('right:rights.manage');
 
     Route::get('/groups', [GroupController::class, 'index'])->middleware('right:groups.view');
     Route::post('/groups', [GroupController::class, 'store'])->middleware('right:groups.manage');

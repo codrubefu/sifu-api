@@ -126,6 +126,7 @@ Behavior:
 - Queries are scoped to the authenticated organization where models use the organization concern.
 - `BelongsToAuthenticatedOrganization`'s global scope treats a row with `organization_id IS NULL` as a shared/global record, visible to (and selectable by) every organization — not just to the organization that happens to own it, since there is none. This applies to every model listed in the trait's usages (`Service`, `LocationGroup`, `Location`, `User`, `Grade`, `UserGrade`, `UserDocument`, `Group`, `CustomFieldValue`, `EventCategory`, `SmtpSetting`, `Article`, `CustomField`, `Event`, `EventOccurrence`, `Campaign`, `Segment`).
 - Because of that, Form Request `exists` validation for a foreign key into one of those models must accept both the authenticated organization's own rows and shared/global (`NULL`-organization) rows — otherwise a value that was legitimately offered by a list endpoint (e.g. a shared `Location`/`Group`) would be rejected as invalid when submitted back. `App\Users\Support\OrganizationScopedExistsRule::make($table, $column, $organizationId)` is the shared helper for this (used by Events, Articles, Campaigns, and Users Form Requests); it never allows another organization's non-null rows, only adds the `NULL`-organization case.
+- Never validate an id from the request with a plain `exists:table,id` rule on a tenant-owned table: it ignores global scopes, and pivot writes (`sync()`/`attach()`) then link rows across organizations (security fix F-04, 2026-11-27). The location `user_ids`/`location_group_id`, service `user_ids`, and user `location_ids`/`service_ids`/`services.*.id` rules now use `OrganizationScopedExistsRule`, so another organization's ids answer `422`. Remaining plain `exists` rules are either global tables (rights, organizations, plans) or ids re-resolved through scoped models; `tests/Feature/CrossTenantRelationValidationTest.php` fails on any new unscoped rule outside that allowlist.
 - Some internal jobs use `withoutGlobalScopes()` when they intentionally need cross-scope lookup.
 
 ## Functional Modules
@@ -206,9 +207,11 @@ Routes:
 Functional behavior:
 
 - Groups are organization-scoped and can contain rights.
-- Rights are global after later migrations.
+- Rights are global (platform-wide, no `organization_id`) and authorization matches them by name (`right:*` → `User::hasAnyRight`).
 - Group create/update rejects disabled rights for the current organization.
-- Rights can be listed, created, updated, and deleted by authorized users.
+- The rights catalogue is **read-only through the API**: only `GET /api/rights` and `GET /api/rights/{right}` exist (right `rights.view`). There are no create/update/delete routes; `POST`/`PUT`/`PATCH`/`DELETE` answer `405`. The catalogue is maintained in code (`database/seeders/ApplicationRights.php` and the module rights seeders).
+- Reason (security fix F-02, 2026-11-27): because rights are shared by every organization and checked by name, a tenant admin able to rename/create/delete rights could change authorization in every other organization (e.g. swapping the names `reports.view` ↔ `users.manage`). The former `rights.manage` right was removed from `ApplicationRights` (so `CreateOrganizationAdmin` no longer grants it) and migration `2026_11_27_000001_revoke_rights_manage_right.php` detaches it from every group and deletes it. The migration's `down()` intentionally does not restore it.
+- The administrator password policy (`PasswordPolicy::for('administrator')`) is now selected by `users.manage` only.
 
 ### Locations and Location Groups
 
@@ -259,6 +262,7 @@ Functional behavior:
 - `service_user` stores `start_date` and `expires_at`.
 - Active user services are determined by active service status and date range.
 - Payment notes for service assignments are generated as PDFs from `storage/note-plata.html` or `storage/nota-plata.html` by `PaymentNoteService`; access is restricted to the authenticated organization.
+- Tenant isolation for assignments (security fix F-01, 2026-11-27): `service_user` has no organization column and no tenant global scope, so `ServiceUser::resolveRouteBinding()` resolves `{assignment}` only through `ServiceUser::scopeVisibleToAuthenticatedOrganization()`: the assigned member must belong to the authenticated user's organization **and** the service must be that organization's own or a shared (`NULL`-organization) one. Any other assignment id answers `404` on every `/api/service-assignments/{assignment}/*` route (`activate`, `suspend`, `resume`, `consume`, `payment-note`, `invoice`). `ServiceLifecycleService::locked()` applies the same scope as defence in depth; without an authenticated organization (jobs, payment callbacks, console) the scope is a no-op. Regression tests: `tests/Feature/ServiceAssignmentTenantIsolationTest.php`.
 - Assigning a service creates a bill number on `service_user`. Invoice numbers are not created automatically; `POST /api/service-assignments/{assignment}/invoice` assigns the next organization invoice number to the assignment.
 
 ### Events and Occurrences
@@ -444,13 +448,15 @@ Main files:
 
 Authenticated routes:
 
-- `GET /api/campaigns`
-- `POST /api/campaigns`
-- `PUT/PATCH /api/campaigns/{campaign}`
-- `GET /api/campaigns/{campaign}/preview`
-- `POST /api/campaigns/{campaign}/schedule`
-- `POST /api/campaigns/{campaign}/cancel`
-- `GET /api/campaigns/{campaign}/statistics`
+- `GET /api/campaigns` — `campaigns.view` or `campaigns.manage`
+- `POST /api/campaigns` — `campaigns.manage`
+- `PUT/PATCH /api/campaigns/{campaign}` — `campaigns.manage`
+- `GET /api/campaigns/{campaign}/preview` — `campaigns.view` or `campaigns.manage`, `throttle:expensive`
+- `POST /api/campaigns/{campaign}/schedule` — `campaigns.manage`, `throttle:expensive`
+- `POST /api/campaigns/{campaign}/cancel` — `campaigns.manage`
+- `GET /api/campaigns/{campaign}/statistics` — `campaigns.view` or `campaigns.manage`
+
+Authorization (security fix F-03, 2026-11-27): campaign routes previously required only a bearer token, so any member could read recipient names/e-mails/phones through `preview` and send mass messages. They now require the rights above (seeded in `ApplicationRights`; disable-able per organization through the `campaigns` right group in `config/organization-access.php`). Migration `2026_11_27_000002_add_campaign_rights.php` creates both rights and grants them to every existing group holding `users.manage` or `reports.manage` (the rights the UI already used to show the campaigns screen), so current staff keep access; members without them now get `403`. `PUT /api/notification-preferences` and `/api/push-devices` stay self-service. Tests: `tests/Feature/CampaignAuthorizationTest.php`.
 
 Functional behavior:
 
@@ -870,7 +876,7 @@ Ambele endpoint-uri folosesc bearer auth și dreptul `organization_subscription.
 
 Preflight-ul negativ răspunde HTTP 200 cu `data.allowed=false`. Operațiile efective care cresc consumul peste limită răspund HTTP 409 cu `message` în română, `code=organization_limit_exceeded`, `resource`, `limit`, `used`, `requested`, `projected`, `period` (YYYY-MM pentru evenimente, null în rest). Autentificarea folosește 401, lipsa dreptului 403, validarea 422. Operațiile existente peste limită pot fi citite, reduse sau modificate fără creșterea resursei depășite; nu se șterg automat date.
 
-Implementarea este în `OrganizationSubscriptionService`, `OrganizationSubscriptionController`, Form Requests și `OrganizationSubscriptionResource`, cu rute în `routes/user.php`. `EnforceOrganizationLimits` aplică serviciul tranzacțional pe scrierile din users/clients/administrators, groups/rights, locations, events/event-occurrences. Schimbările de drepturi globale verifică toate organizațiile, cu blocare în ordinea ID-urilor. Verificarea consumului final și scrierea se fac în aceeași tranzacție, după blocarea organizației; orice depășire anulează și asocierile/auditul scrierii. E-mailul de configurare a parolei este programat după commit, pentru a nu trimite acces pentru un cont refuzat. Validarea group_ids la creare/update verifică organizația.
+Implementarea este în `OrganizationSubscriptionService`, `OrganizationSubscriptionController`, Form Requests și `OrganizationSubscriptionResource`, cu rute în `routes/user.php`. `EnforceOrganizationLimits` aplică serviciul tranzacțional pe scrierile din users/clients/administrators, groups, locations, events/event-occurrences. Catalogul global de drepturi nu mai poate fi modificat prin API (vezi „Groups and Rights”), deci nu mai există scrieri care să verifice toate organizațiile. Verificarea consumului final și scrierea se fac în aceeași tranzacție, după blocarea organizației; orice depășire anulează și asocierile/auditul scrierii. E-mailul de configurare a parolei este programat după commit, pentru a nu trimite acces pentru un cont refuzat. Validarea group_ids la creare/update verifică organizația.
 
 Generatorul `EventOccurrenceGeneratorService` reutilizează același serviciu, inclusiv la apelare din job. `ExtendRecurringEventOccurrences` extinde seriile în ordinea ID-urilor. Dacă o serie nu încape integral, extinderea ei este anulată, cursorul și aparițiile rămân intacte, iar jobul continuă cu celelalte serii. Tabela `organization_event_limit_blocks` păstrează blocajul per eveniment; API-ul îl expune și jobul îl jurnalizează numai când detaliile se schimbă. Următoarea execuție reîncearcă. Succesul, modificarea acceptată sau dezactivarea/ștergerea evenimentului elimină blocajul. Blocarea nu trimite notificări și nu creează plăți.
 

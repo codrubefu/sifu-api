@@ -2,6 +2,7 @@
 
 namespace App\Users\Http\Requests;
 
+use App\Users\Support\OrganizationScopedExistsRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,9 +20,9 @@ class SyncUserServicesRequest extends FormRequest
                 Rule::requiredIf(fn (): bool => ! $this->has('services') && ! $this->has('service_ids')),
                 'array',
             ],
-            'service_ids.*' => ['integer', 'exists:services,id'],
+            'service_ids.*' => ['integer', OrganizationScopedExistsRule::make('services', 'id', $this->user()?->organization_id)],
             'services' => ['sometimes', 'array'],
-            'services.*.id' => ['required_with:services', 'integer', 'exists:services,id'],
+            'services.*.id' => ['required_with:services', 'integer', OrganizationScopedExistsRule::make('services', 'id', $this->user()?->organization_id)],
             'services.*.start_date' => ['sometimes', 'date'],
         ];
     }

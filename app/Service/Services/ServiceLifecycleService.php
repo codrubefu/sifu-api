@@ -298,6 +298,7 @@ class ServiceLifecycleService
 
     private function locked(ServiceUser $assignment): ServiceUser
     {
-        return ServiceUser::query()->with('service')->lockForUpdate()->findOrFail($assignment->id);
+        // Defence in depth: callers acting for an authenticated user can never lock another tenant's assignment.
+        return ServiceUser::query()->visibleToAuthenticatedOrganization()->with('service')->lockForUpdate()->findOrFail($assignment->id);
     }
 }

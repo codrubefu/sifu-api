@@ -115,25 +115,6 @@ use OpenApi\Attributes as OA;
     type: 'object',
 )]
 #[OA\Schema(
-    schema: 'StoreRightRequest',
-    required: ['name', 'label'],
-    properties: [
-        new OA\Property(property: 'name', type: 'string', example: 'reports.view'),
-        new OA\Property(property: 'label', type: 'string', example: 'View reports'),
-        new OA\Property(property: 'description', type: 'string', nullable: true, example: 'Read report data.'),
-    ],
-    type: 'object',
-)]
-#[OA\Schema(
-    schema: 'UpdateRightRequest',
-    properties: [
-        new OA\Property(property: 'name', type: 'string', example: 'reports.view'),
-        new OA\Property(property: 'label', type: 'string', example: 'View reports'),
-        new OA\Property(property: 'description', type: 'string', nullable: true, example: 'Read report data.'),
-    ],
-    type: 'object',
-)]
-#[OA\Schema(
     schema: 'StoreGroupRequest',
     required: ['name', 'label'],
     properties: [

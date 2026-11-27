@@ -3,21 +3,22 @@
 namespace App\Users\Http\Controllers\Api;
 
 use App\Users\Http\Controllers\Controller;
-use App\Users\Http\Requests\StoreRightRequest;
-use App\Users\Http\Requests\UpdateRightRequest;
 use App\Users\Http\Resources\RightResource;
 use App\Users\Models\Right;
 use App\Users\Services\OrganizationAccessService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Facades\DB;
 
+/**
+ * Read-only access to the platform-wide rights catalogue.
+ *
+ * Rights have no organization_id and authorization matches them by name, so any write
+ * (create/rename/delete) would change authorization for every organization. The catalogue
+ * is therefore maintained only in code (database/seeders/ApplicationRights.php).
+ */
 class RightController extends Controller
 {
-    public function __construct(private readonly OrganizationAccessService $organizationAccess)
-    {
-    }
+    public function __construct(private readonly OrganizationAccessService $organizationAccess) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -40,15 +41,6 @@ class RightController extends Controller
         return RightResource::collection($rights);
     }
 
-    public function store(StoreRightRequest $request): JsonResponse
-    {
-        $right = Right::query()->create($request->validated());
-
-        return (new RightResource($right->loadCount('groups')))
-            ->response()
-            ->setStatusCode(201);
-    }
-
     public function show(Right $right): RightResource
     {
         abort_if(
@@ -57,33 +49,5 @@ class RightController extends Controller
         );
 
         return new RightResource($right->loadCount('groups'));
-    }
-
-    public function update(UpdateRightRequest $request, Right $right): RightResource
-    {
-        $right->update($request->validated());
-
-        return new RightResource($right->loadCount('groups'));
-    }
-
-    public function destroy(Right $right): JsonResponse
-    {
-        if ($error = $this->organizationAccess->deleteBlockedByManyToManyResponse(
-            $right,
-            ['groups'],
-            request()->user()?->organization_id,
-        )) {
-            return response()->json($error, 422);
-        }
-
-        if ($right->groups()->exists()) {
-            return response()->json([
-                'message' => 'Cannot delete a right assigned to groups.',
-            ], 422);
-        }
-
-        DB::transaction(fn () => $right->delete());
-
-        return response()->json(status: 204);
     }
 }

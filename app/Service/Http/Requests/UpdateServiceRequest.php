@@ -2,6 +2,7 @@
 
 namespace App\Service\Http\Requests;
 
+use App\Users\Support\OrganizationScopedExistsRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateServiceRequest extends FormRequest
@@ -27,7 +28,7 @@ class UpdateServiceRequest extends FormRequest
             'max_users' => ['nullable', 'integer', 'min:1'],
             'is_active' => ['sometimes', 'boolean'],
             'user_ids' => ['sometimes', 'array'],
-            'user_ids.*' => ['integer', 'exists:users,id'],
+            'user_ids.*' => ['integer', OrganizationScopedExistsRule::make('users', 'id', $this->user()?->organization_id)],
         ];
     }
 }

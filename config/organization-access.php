@@ -27,5 +27,6 @@ return [
         'payments' => ['payments.*'],
         'custom-fields' => ['custom-fields.*'],
         'grades' => ['grades.*'],
+        'campaigns' => ['campaigns.*'],
     ],
 ];

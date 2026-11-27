@@ -51,6 +51,7 @@ class CreateOrganizationAdminCommandTest extends TestCase
         $this->assertTrue($adminGroup->rights()->where('name', 'location_groups.manage')->exists());
         $this->assertTrue($adminGroup->rights()->where('name', 'smtp_settings.manage')->exists());
         $this->assertSame(['profile.view'], $userGroup->rights()->pluck('name')->all());
+        $this->assertFalse($adminGroup->rights()->where('name', 'rights.manage')->exists(), 'Tenant admins must not be able to write the platform-wide rights catalogue.');
     }
 
     public function test_command_persists_the_organization_url_option(): void
